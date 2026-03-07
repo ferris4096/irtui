@@ -1,16 +1,14 @@
-use std::sync::Arc;
-
 use crate::{
     event::{AppEvent, Event, EventHandler},
-    pano::{get_pano_metadata_from_id, render_pano_from_metadata},
+    pano::{get_pano_metadata_from_id, load_equirect, render_pano_from_metadata},
     roadtrip::{Location, RoadtripEvent},
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{DefaultTerminal, layout::Rect};
 use ratatui_image::{Resize, picker::Picker, protocol::Protocol};
-use tokio::sync::mpsc::{Receiver, Sender};
-use tracing::{debug, warn};
+use tokio::sync::mpsc::Sender;
+use tracing::{debug, info, warn};
 
 pub enum PanoRequest {
     // Window was resized, re-render pano, using the cached tiles
@@ -60,19 +58,68 @@ impl App {
             let mut cur_size = crossterm::terminal::size().expect("Failed to query terminal size");
             let font_size = picker.font_size();
 
+            let mut meta_cache = None;
+
+            let mut equirect_cache = None;
+
+            let mut cur_heading = 0.0;
+
+            let mut cur_panoid = String::new();
+
             while let Some(request) = pano_rx.recv().await {
                 match request {
                     PanoRequest::Resize(width, height) => {
-                        // Handle resize event
-                        if cur_size == (width, height) {
-                            continue; // No need to re-render if size didn't change
+                        if let Some(meta) = &meta_cache
+                            && let Some(equirect) = &equirect_cache
+                        {
+                            info!("Resizing image from {cur_size:?} to ({width}, {height})");
+                            // Handle resize event
+                            if cur_size == (width, height) {
+                                continue; // No need to re-render if size didn't change
+                            }
+                            cur_size = (width, height);
+                            // Convert characters to pixels
+                            let width = width * font_size.0;
+                            let height = height * font_size.1;
+
+                            let pano = match render_pano_from_metadata(
+                                meta,
+                                equirect,
+                                cur_heading as f32,
+                                width as u32,
+                                height as u32,
+                            )
+                            .await
+                            {
+                                Ok(pano) => pano,
+                                Err(err) => {
+                                    warn!("Failed to render pano {cur_panoid}: {err:#?}");
+                                    continue;
+                                }
+                            };
+
+                            let protocol = match picker.new_protocol(
+                                pano.into(),
+                                Rect::new(0, 0, width, height),
+                                Resize::Crop(None),
+                            ) {
+                                Ok(proto) => proto,
+                                Err(err) => {
+                                    warn!(
+                                        "Failed to create protocol for pano {cur_panoid}: {err:?}"
+                                    );
+                                    continue;
+                                }
+                            };
+
+                            evt_sender
+                                .send(Event::App(AppEvent::NewFrame(protocol)))
+                                .unwrap();
                         }
-                        cur_size = (width, height);
-                        // Convert characters to pixels
-                        let width = width * font_size.0;
-                        let height = height * font_size.1;
                     }
                     PanoRequest::Render(panoid, heading) => {
+                        cur_panoid = panoid.clone();
+                        cur_heading = heading;
                         // Handle render event: fetch tiles and render into an image buffer.
                         let width = cur_size.0 * font_size.0;
                         let height = cur_size.1 * font_size.1;
@@ -86,8 +133,22 @@ impl App {
                             }
                         };
 
+                        let equirect = match load_equirect(&meta).await {
+                            Ok(ok) => ok,
+                            Err(err) => {
+                                warn!(
+                                    "Failed to render pano {panoid}, failed to fetch equirect: {err:#?}"
+                                );
+                                continue;
+                            }
+                        };
+
+                        meta_cache = Some(meta.clone());
+                        equirect_cache = Some(equirect.clone());
+
                         let pano = match render_pano_from_metadata(
-                            meta,
+                            &meta,
+                            &equirect,
                             heading as f32,
                             width as u32,
                             height as u32,
@@ -113,7 +174,7 @@ impl App {
                             }
                         };
 
-                        evt_sender.send(Event::App(AppEvent::NewFrame(protocol))).await.unwrap();
+                        let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
                     }
                 }
             }
@@ -132,6 +193,7 @@ impl App {
     /// Run the application's main loop.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> anyhow::Result<()> {
         while self.running {
+            debug!("Rendering");
             terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
             self.handle_events().await?;
         }
@@ -139,7 +201,10 @@ impl App {
     }
 
     pub async fn handle_events(&mut self) -> anyhow::Result<()> {
-        if let Some(event) = self.events.next().await {
+        let mut requested_size = None;
+        while let Some(event) = self.events.next().await {
+            info!("Handling event: {event:?}");
+
             match event {
                 Event::Crossterm(event) => match event {
                     crossterm::event::Event::Key(key_event)
@@ -148,9 +213,7 @@ impl App {
                         self.handle_key_event(key_event).await?
                     }
                     crossterm::event::Event::Resize(width, height) => {
-                        self.pano_tx
-                            .send(PanoRequest::Resize(width, height))
-                            .await?;
+                        requested_size = Some((width, height));
                     }
                     _ => {}
                 },
@@ -160,6 +223,16 @@ impl App {
                 },
                 Event::RoadTrip(roadtrip_event) => {
                     self.handle_roadtrip_event(roadtrip_event).await?;
+                }
+                // Tick is only a marker and shouldn't trigger specific behavior
+                Event::Tick => {
+                    // Avoid batches of resize events
+                    if let Some((width, height)) = requested_size {
+                        self.pano_tx
+                            .send(PanoRequest::Resize(width, height))
+                            .await?;
+                    }
+                    break;
                 }
             }
         }

@@ -389,7 +389,7 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
     })
 }
 
-async fn human_loadtile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
+async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
     let query_url = match tile.pano.pano_type {
         PanoType::Official => {
             format!(
@@ -427,7 +427,7 @@ async fn human_loadtile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage
     Ok(img.to_rgb8())
 }
 
-async fn human_load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
+pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
     let zoom = meta.max_zoom.min(3);
     let mut buf = ImageBuffer::new(
         meta.zoom_levels[zoom].crop_width,
@@ -450,7 +450,7 @@ async fn human_load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
             let client = client.clone();
 
             handles.push(task::spawn(async move {
-                ((x, y), human_loadtile(&tile, &client).await)
+                ((x, y), load_tile(&tile, &client).await)
             }));
         }
     }
@@ -513,7 +513,7 @@ fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
 /// Thanks to https://blogs.codingballad.com/unwrapping-the-view-transforming-360-panoramas-into-intuitive-videos-with-python-6009bd5bca94
 /// for this code
 fn pano_to_plane(
-    pano: RgbImage,
+    pano: &RgbImage,
     fov: f64,
     out_w: u32,
     out_h: u32,
@@ -560,14 +560,13 @@ fn pano_to_plane(
 }
 
 pub async fn render_pano_from_metadata(
-    meta: PanoMetadata,
+    meta: &PanoMetadata,
+    pano: &RgbImage,
     heading: f32,
     out_w: u32,
     out_h: u32,
 ) -> anyhow::Result<RgbImage> {
     let before_load = Instant::now();
-
-    let pano = human_load_equirect(&meta).await?;
 
     let load_ms = before_load.elapsed().as_secs_f64() * 1000.0;
 

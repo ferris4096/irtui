@@ -1,12 +1,14 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Duration};
 
 use crossterm::event::{Event as CrosstermEvent, EventStream};
 use futures::prelude::*;
 use ratatui_image::protocol::Protocol;
 use tokio::{sync::mpsc, task};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::roadtrip::{self, RoadtripEvent};
+
+const FPS: f64 = 15.0;
 
 /// Representation of all possible events.
 #[derive(Clone, Debug)]
@@ -22,6 +24,11 @@ pub enum Event {
     ///
     /// Use this event to emit custom events that are specific to your application.
     App(AppEvent),
+
+    /// Emitted at constant intervals
+    ///
+    /// Used to batch process events and render at a constant fps
+    Tick,
 }
 
 /// Application events.
@@ -50,26 +57,38 @@ impl Debug for AppEvent {
 #[derive(Debug)]
 pub struct EventHandler {
     /// Event sender channel.
-    pub sender: mpsc::Sender<Event>,
+    pub sender: mpsc::UnboundedSender<Event>,
     /// Event receiver channel.
-    receiver: mpsc::Receiver<Event>,
+    receiver: mpsc::UnboundedReceiver<Event>,
 }
 
 impl EventHandler {
     /// Constructs a new instance of [`EventHandler`] and spawns a new threads to handle events.
     pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel(64); // Random, may change
+        let (sender, receiver) = mpsc::unbounded_channel(); // Random, may change
         // Spawn a thread to handle crossterm events.
         {
             let sender = sender.clone();
-            let mut event_stream = EventStream::new();
             task::spawn(async move {
+                let tick_rate = Duration::from_secs_f64(1.0 / FPS);
+                let mut reader = crossterm::event::EventStream::new();
+                let mut tick = tokio::time::interval(tick_rate);
                 loop {
-                    if let Some(Ok(event)) = event_stream.next().await
-                        && sender.send(Event::Crossterm(event)).await.is_err()
-                    {
+                    let tick_delay = tick.tick();
+                    let crossterm_event = reader.next().fuse();
+                    tokio::select! {
+                      _ = sender.closed() => {
                         break;
-                    }
+                      }
+                      _ = tick_delay => {
+                        debug!("Sending tick event");
+                        let _ = sender.send(Event::Tick);
+                      }
+                      Some(Ok(evt)) = crossterm_event => {
+                        debug!("Sending crossterm event: {evt:?}");
+                        let _ = sender.send(Event::Crossterm(evt));
+                      }
+                    };
                 }
             });
         }
@@ -85,7 +104,6 @@ impl EventHandler {
                         Ok(evt) => {
                             if sender
                                 .send(Event::RoadTrip(RoadtripEvent::WS(evt)))
-                                .await
                                 .is_err()
                             {
                                 break;
@@ -119,7 +137,7 @@ impl EventHandler {
     pub async fn send(&mut self, app_event: AppEvent) {
         // Ignore the result as the reciever cannot be dropped while this struct still has a
         // reference to it
-        let _ = self.sender.send(Event::App(app_event)).await;
+        let _ = self.sender.send(Event::App(app_event));
     }
 }
 
