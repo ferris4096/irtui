@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use crate::{
     event::{AppEvent, Event, EventHandler},
     pano::{get_pano_metadata_from_id, load_equirect, render_pano_from_metadata},
-    roadtrip::{Location, RoadtripEvent},
+    roadtrip::{Location, RoadtripEvent, VoteOption},
 };
 
+use chrono::{DateTime, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{DefaultTerminal, layout::Rect};
 use ratatui_image::{Resize, picker::Picker, protocol::Protocol};
@@ -35,6 +38,12 @@ pub struct App {
     pub pano_tx: Sender<PanoRequest>,
 
     pub users_online: u16,
+
+    pub vote_options: Vec<VoteOption>,
+
+    pub vote_counts: HashMap<i8, u16>,
+
+    pub vote_ends: Option<DateTime<Utc>>,
 }
 
 impl Default for App {
@@ -55,7 +64,7 @@ impl App {
 
         debug!("Spawning pano rendering task");
         tokio::task::spawn(async move {
-            let picker = Picker::from_query_stdio().unwrap();
+            let picker = Picker::halfblocks();
 
             let mut cur_size = crossterm::terminal::size().expect("Failed to query terminal size");
             let font_size = picker.font_size();
@@ -188,6 +197,9 @@ impl App {
             events: evt_handler, // Spawn event handler thread
             cur_frame: None,
             users_online: 0,
+            vote_options: Vec::new(),
+            vote_counts: HashMap::new(),
+            vote_ends: None,
         }
     }
 
@@ -250,6 +262,11 @@ impl App {
             RoadtripEvent::WS(evt) => {
                 self.users_online = evt.total_users;
                 let panoid = evt.pano.clone();
+
+                self.vote_counts = evt.vote_counts;
+                self.vote_options = evt.options;
+                self.vote_ends = Some(evt.end_time);
+
                 if self.current_pano != Some((evt.pano, evt.heading)) {
                     // Update current pano and trigger a render request.
                     self.current_pano = Some((panoid.clone(), evt.heading));

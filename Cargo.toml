@@ -23,3 +23,5 @@ futures = "0.3.32"
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 base64 = "0.22.1"
 serde-aux = "4.7.0"
+chrono = "0.4.44"
+unicode-width = "0.2.2"

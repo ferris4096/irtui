@@ -1,4 +1,7 @@
+use std::{collections::HashMap, time::Instant};
+
 use anyhow::Context;
+use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use serde::Deserialize;
 use serde_aux::prelude::*;
@@ -12,14 +15,26 @@ pub enum RoadtripEvent {
     WS(WSEvent),
 }
 
+/// A vote option, aka, an arrow
 #[derive(Debug, Clone, Deserialize, Default)]
+pub struct VoteOption {
+    pub description: Option<String>,
+    pub heading: f64,
+    pub pano: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct WSEvent {
     pub pano: String,
     pub heading: f64,
     pub location: Location,
-    #[serde(rename = "totalUsers")]
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub total_users: u16,
+    pub vote_counts: HashMap<i8, u16>,
+    pub options: Vec<VoteOption>,
+    #[serde(deserialize_with = "deserialize_datetime_utc_from_milliseconds")]
+    pub end_time: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
