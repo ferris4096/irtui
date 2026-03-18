@@ -24,8 +24,6 @@ jobs:
         sudo apt-get install -y libchafa-dev pkg-config libglib2.0-dev
     - if: matrix.os == 'macos-latest'
       run: brew install chafa
-    - if: matrix.os == 'windows-latest'
-      run: winget install pkgconfiglite.pkgconfiglite hpjansson.Chafa --accept-package-agreements --accept-source-agreements
     - name: Build
       run: cargo build --verbose
     - name: Run tests
