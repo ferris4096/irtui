@@ -11,7 +11,7 @@ anyhow = "1.0.101"
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 image = "0.25.9"
 ratatui = "0.30.0"
-ratatui-image = { version = "10.0.5" }
+ratatui-image = { version = "10.0.5", default-features = false, features = ["crossterm", "image-defaults"] }
 reqwest = { version = "0.13.2", features = ["json"] }
 regex = "1.10.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -26,5 +26,5 @@ serde-aux = "4.7.0"
 chrono = "0.4.44"
 unicode-width = "0.2.2"
 
-[target.'cfg(windows)'.dependencies]
-ratatui-image = { version = "10.0.5", features = ["crossterm", "image-defaults"], default-features = false }
+[target.'cfg(not(windows))'.dependencies]
+ratatui-image = { version = "10.0.5"}
