@@ -23,3 +23,8 @@ futures = "0.3.32"
 tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 base64 = "0.22.1"
 serde-aux = "4.7.0"
+chrono = "0.4.44"
+unicode-width = "0.2.2"
+
+[target.'cfg(windows)'.dependencies]
+ratatui-image = { version = "10.0.5", features = ["crossterm", "image-defaults"], default-features = false }

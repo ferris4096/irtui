@@ -551,7 +551,7 @@ fn pano_to_plane(
             let sphere_u = sphere_u.rem_euclid(pano_width as f32);
             let sphere_v = sphere_v.clamp(0., pano_height as f32 - 1.);
 
-            let color = interpolate_color(sphere_u as f32, sphere_v as f32, pano);
+            let color = interpolate_color(sphere_u, sphere_v, pano);
             out.put_pixel(u, v, color);
         }
     }
@@ -577,7 +577,7 @@ pub async fn render_pano_from_metadata(
         90.,
         out_w,
         out_h,
-        (270. - meta.heading as f32 + heading as f32).rem_euclid(360.), // This seems to work, let's not mess with it, OK
+        (270. - meta.heading as f32 + heading).rem_euclid(360.), // This seems to work, let's not mess with it, OK
         meta.tilt as f32,
         -meta.roll as f32,
     );

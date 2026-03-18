@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 
 use crate::roadtrip::{self, RoadtripEvent};
 
-const FPS: f64 = 15.0;
+const FPS: f64 = 60.0;
 
 /// Representation of all possible events.
 #[derive(Clone, Debug)]
