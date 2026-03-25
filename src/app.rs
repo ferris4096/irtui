@@ -223,7 +223,7 @@ impl App {
                     crossterm::event::Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_event(key_event).await?
+                        self.handle_key_event(key_event)?;
                     }
                     crossterm::event::Event::Resize(width, height) => {
                         requested_size = Some((width, height));
@@ -281,12 +281,12 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    pub async fn handle_key_event(&mut self, key_event: KeyEvent) -> anyhow::Result<()> {
+    pub fn handle_key_event(&mut self, key_event: KeyEvent) -> anyhow::Result<()> {
         debug!("Recved key evt: {key_event:?}");
         match key_event.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit).await,
+            KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
-                self.events.send(AppEvent::Quit).await;
+                self.events.send(AppEvent::Quit);
             }
             // Other handlers you could add here.
             _ => {}

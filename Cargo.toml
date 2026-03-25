@@ -1,8 +1,8 @@
 [package]
 name = "irtui"
-version = "0.0.0"
+version = "0.1.0"
 description = "A terminal user interface for the Neal.fun Internet Roadtrip"
-authors = ["ferris4096"]
+authors = ["lazo4"]
 license = "MIT"
 edition = "2024"
 
@@ -31,3 +31,6 @@ unicode-width = "0.2.2"
 
 [target.'cfg(not(windows))'.dependencies]
 ratatui-image = { version = "10.0.5" }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

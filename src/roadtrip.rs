@@ -71,3 +71,49 @@ impl WSBackend {
         Some(result())
     }
 }
+
+#[test]
+fn test_ws_event_deserialization() {
+    let json = r#"
+    {
+        "pano": "abc123",
+        "heading": 42.5,
+        "location": {
+            "road": "Tremont St",
+            "neighborhood": "Boston",
+            "state": "Massachusetts",
+            "county": "Boston County",
+            "country": "USA"
+        },
+        "totalUsers": "123",
+        "voteCounts": { "1": 10, "-1": 5 },
+        "options": [
+            { "heading": 10.0, "pano": "p1" }
+        ],
+        "endTime": 1000
+    }
+    "#;
+
+    let event: WSEvent = serde_json::from_str(json).unwrap();
+
+    assert_eq!(event.pano, "abc123");
+    assert_eq!(event.total_users, 123);
+    assert_eq!(event.vote_counts.get(&1), Some(&10));
+    assert_eq!(event.options.len(), 1);
+    assert_eq!(event.end_time.timestamp(), 1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{Duration, timeout};
+
+    #[tokio::test]
+    #[ignore]
+    async fn smoke_test_real_ws() {
+        let mut backend = WSBackend::new().await.unwrap();
+
+        let event = timeout(Duration::from_secs(5), backend.next()).await;
+        assert!(event.is_ok(), "Websocket did not respond in time");
+    }
+}

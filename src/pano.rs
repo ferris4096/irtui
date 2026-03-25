@@ -149,7 +149,7 @@ fn decode_panoid(panoid: &str) -> Pano {
     }
 }
 
-/// Fetch metadata for a panorama ID using the MapsJs internal service.
+/// Fetch metadata for a panorama ID using the `MapsJs` internal service.
 /// Returns `None` on any network/error condition.
 ///
 /// Stolen from Mikarific/LookoutTheWindow
@@ -511,7 +511,7 @@ fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
 
 /// Render an equirectangular projection to a 2d plane, with yaw and pitch.
 ///
-/// Thanks to https://blogs.codingballad.com/unwrapping-the-view-transforming-360-panoramas-into-intuitive-videos-with-python-6009bd5bca94
+/// Thanks to <https://blogs.codingballad.com/unwrapping-the-view-transforming-360-panoramas-into-intuitive-videos-with-python-6009bd5bca94>
 /// for this code
 fn pano_to_plane(
     pano: &RgbImage,
@@ -560,7 +560,7 @@ fn pano_to_plane(
     out
 }
 
-#[instrument(level = "debug")]
+// #[instrument(level = "debug")]
 pub async fn render_pano_from_metadata(
     meta: &PanoMetadata,
     pano: &RgbImage,
@@ -591,4 +591,23 @@ pub async fn render_pano_from_metadata(
     info!("Load: {load_ms}ms, render: {time_ms}ms, total: {total_ms}ms");
 
     Ok(rendered)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_decode_panoid() {
+        // official-looking pano
+        let pano = decode_panoid("tXVQoL_JtBEBbV7LYKW_2A");
+        assert_eq!(pano.pano_type, PanoType::Official);
+        assert_eq!(pano.id, "tXVQoL_JtBEBbV7LYKW_2A");
+
+        // unofficial / malformed
+        let pano = decode_panoid("CAoSFkNJSE0wb2dLRUlDQWdJQ0U5SVBWR1E.");
+        assert_eq!(pano.pano_type, PanoType::Unofficial);
+        assert_eq!(pano.id, "CIHM0ogKEICAgICE9IPVGQ");
+    }
 }

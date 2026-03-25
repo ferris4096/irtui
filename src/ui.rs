@@ -1,9 +1,9 @@
-use std::cmp::{self, Reverse, min};
+use std::cmp::{self, Reverse};
 
 use chrono::Utc;
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Offset, Rect, Size},
+    layout::{Constraint, Offset, Rect},
     style::{Color, Style, Stylize},
     symbols,
     text::Line,
@@ -45,7 +45,7 @@ impl Widget for &App {
             let content_width = content.width() as u16;
             let min_content_width = compute_min_width(&content, area.width > WIDE_BREAK);
 
-            let mut padding = if area.width > WIDE_BREAK {
+            let padding = if area.width > WIDE_BREAK {
                 Padding::uniform(1)
             } else {
                 Padding::ZERO
@@ -221,4 +221,26 @@ fn test_min_width() {
         compute_min_width("Town of East Hampton, United States of America", true),
         8
     );
+}
+
+#[test]
+fn test_min_width_no_wrap() {
+    assert_eq!(compute_min_width("123 1234", false), 8);
+}
+
+#[test]
+fn test_min_width_empty() {
+    assert_eq!(compute_min_width("", true), 0);
+}
+
+#[test]
+fn test_min_width_single_word() {
+    assert_eq!(compute_min_width("hello", true), 5);
+}
+
+#[test]
+fn test_min_width_unicode() {
+    // "é" = width 1, "界" = width 2
+    assert_eq!(compute_min_width("éé é", true), 2);
+    assert_eq!(compute_min_width("hello 世界", true), 5);
 }

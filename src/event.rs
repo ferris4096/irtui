@@ -64,6 +64,7 @@ pub struct EventHandler {
 
 impl EventHandler {
     /// Constructs a new instance of [`EventHandler`] and spawns a new threads to handle events.
+    #[must_use]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded_channel(); // Random, may change
         // Spawn a thread to handle crossterm events.
@@ -77,7 +78,7 @@ impl EventHandler {
                     let tick_delay = tick.tick();
                     let crossterm_event = reader.next().fuse();
                     tokio::select! {
-                      _ = sender.closed() => {
+                      () = sender.closed() => {
                         break;
                       }
                       _ = tick_delay => {
@@ -134,7 +135,7 @@ impl EventHandler {
     ///
     /// This is useful for sending events to the event handler which will be processed by the next
     /// iteration of the application's event loop.
-    pub async fn send(&mut self, app_event: AppEvent) {
+    pub fn send(&mut self, app_event: AppEvent) {
         // Ignore the result as the reciever cannot be dropped while this struct still has a
         // reference to it
         let _ = self.sender.send(Event::App(app_event));
