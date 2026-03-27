@@ -561,7 +561,7 @@ fn pano_to_plane(
 }
 
 // #[instrument(level = "debug")]
-pub async fn render_pano_from_metadata(
+pub fn render_pano_from_metadata(
     meta: &PanoMetadata,
     pano: &RgbImage,
     heading: f32,
@@ -596,7 +596,7 @@ pub async fn render_pano_from_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
+    use pretty_assertions::{assert_eq, assert_ne};
 
     #[test]
     fn test_decode_panoid() {
@@ -609,5 +609,91 @@ mod tests {
         let pano = decode_panoid("CAoSFkNJSE0wb2dLRUlDQWdJQ0U5SVBWR1E.");
         assert_eq!(pano.pano_type, PanoType::Unofficial);
         assert_eq!(pano.id, "CIHM0ogKEICAgICE9IPVGQ");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_pano_fetch() {
+        let meta = get_pano_metadata_from_id("tXVQoL_JtBEBbV7LYKW_2A")
+            .await
+            .unwrap();
+        let _ = load_equirect(&meta).await;
+
+        let meta = get_pano_metadata_from_id("CAoSFkNJSE0wb2dLRUlDQWdJQ0U5SVBWR1E.")
+            .await
+            .unwrap();
+        let _ = load_equirect(&meta).await;
+    }
+
+    #[test]
+    fn test_map_to_sphere() {
+        let (theta, phi) = map_to_sphere(1.0, 2.0, 3.0, 0.0, 0.0);
+
+        assert!(theta.is_finite());
+        assert!(phi.is_finite());
+        assert!(theta >= 0.0 && theta <= std::f32::consts::PI);
+
+        let (theta, _) = map_to_sphere(0.0, 0.0, 1.0, 0.0, 0.0);
+
+        // should point straight ahead → near 0
+        assert!(theta.abs() < 1e-5);
+
+        let (_, phi1) = map_to_sphere(1.0, 0.0, 1.0, 0.0, 0.0);
+        let (_, phi2) = map_to_sphere(1.0, 0.0, 1.0, 1.0, 0.0);
+
+        assert_ne!(phi1, phi2);
+
+        for i in 0..1000 {
+            let x = (i as f32).sin();
+            let y = (i as f32).cos();
+            let z = 1.0;
+
+            let (theta, phi) = map_to_sphere(x, y, z, 0.3, 0.7);
+
+            assert!(theta.is_finite());
+            assert!(phi.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_render_pano_from_metadata_basic() {
+        use image::{Rgb, RgbImage};
+
+        // fake 2x2 pano image
+        let mut pano = RgbImage::new(2, 2);
+        pano.put_pixel(0, 0, image::Rgb([255, 0, 0]));
+        pano.put_pixel(1, 0, image::Rgb([0, 255, 0]));
+        pano.put_pixel(0, 1, image::Rgb([0, 0, 255]));
+        pano.put_pixel(1, 1, image::Rgb([255, 255, 0]));
+
+        // fake metadata
+        let meta = super::PanoMetadata {
+            pano: super::Pano {
+                pano_type: super::PanoType::Official,
+                id: "fake".to_string(),
+            },
+            lat: 0.0,
+            lng: 0.0,
+            image_width: 2,
+            image_height: 2,
+            tile_width: 2,
+            tile_height: 2,
+            max_zoom: 0,
+            zoom_levels: vec![super::ZoomLevel {
+                crop_width: 2,
+                crop_height: 2,
+                num_tiles_x: 1,
+                num_tiles_y: 1,
+            }],
+            heading: 0.0,
+            tilt: 0.0,
+            roll: 0.0,
+        };
+
+        // call render
+        let rendered = super::render_pano_from_metadata(&meta, &pano, 0.0, 4, 4).unwrap();
+
+        assert_eq!(rendered.width(), 4);
+        assert_eq!(rendered.height(), 4);
     }
 }

@@ -99,9 +99,7 @@ impl App {
                                 cur_heading as f32,
                                 width as u32,
                                 height as u32,
-                            )
-                            .await
-                            {
+                            ) {
                                 Ok(pano) => pano,
                                 Err(err) => {
                                     warn!("Failed to render pano {cur_panoid}: {err:#?}");
@@ -161,9 +159,7 @@ impl App {
                             heading as f32,
                             width as u32,
                             height as u32,
-                        )
-                        .await
-                        {
+                        ) {
                             Ok(pano) => pano,
                             Err(err) => {
                                 warn!("Failed to render pano {panoid}: {err:#?}");
