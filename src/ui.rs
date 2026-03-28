@@ -30,6 +30,8 @@ fn compute_min_width(content: &str, wrap: bool) -> u16 {
 
 impl Widget for &App {
     /// Render the whole UI.
+    ///
+    /// TODO: Make this function shorter
     fn render(self, area: Rect, buf: &mut Buffer) {
         // Display the current streetview frame
         if let Some(proto) = &self.cur_frame {

@@ -67,9 +67,8 @@ fn decode_panoid(panoid: &str) -> Pano {
         // dot is used for padding in the JS code
         b64 = b64.replace('.', "=");
 
-        let bytes = match general_purpose::STANDARD.decode(&b64) {
-            Ok(b) => b,
-            Err(_) => return None,
+        let Ok(bytes) = general_purpose::STANDARD.decode(&b64) else {
+            return None;
         };
 
         let mut index = 0;
@@ -120,7 +119,7 @@ fn decode_panoid(panoid: &str) -> Pano {
         let pano_type = match ty {
             2 => PanoType::Official,
             10 => PanoType::Unofficial,
-            _ => PanoType::Official,
+            _ => unreachable!(),
         };
 
         Some(Pano { pano_type, id })
@@ -631,7 +630,7 @@ mod tests {
 
         assert!(theta.is_finite());
         assert!(phi.is_finite());
-        assert!(theta >= 0.0 && theta <= std::f32::consts::PI);
+        assert!((0.0..=std::f32::consts::PI).contains(&theta));
 
         let (theta, _) = map_to_sphere(0.0, 0.0, 1.0, 0.0, 0.0);
 
@@ -657,7 +656,7 @@ mod tests {
 
     #[test]
     fn test_render_pano_from_metadata_basic() {
-        use image::{Rgb, RgbImage};
+        use image::RgbImage;
 
         // fake 2x2 pano image
         let mut pano = RgbImage::new(2, 2);

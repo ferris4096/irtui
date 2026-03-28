@@ -1,3 +1,11 @@
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_lossless,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation
+)]
+
 use std::fs::{self, File};
 
 use tracing::{Level, info};
