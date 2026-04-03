@@ -188,6 +188,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
+    #[ignore = "uses crossterm backend"]
     async fn test_app_default() {
         let app = App::default();
         assert!(app.running);
