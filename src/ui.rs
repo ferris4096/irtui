@@ -3,7 +3,7 @@ use std::cmp::{self, Reverse};
 use chrono::Utc;
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Offset, Rect},
+    layout::{Constraint, Offset, Rect, Size},
     style::{Color, Style, Stylize},
     symbols,
     text::Line,
@@ -28,6 +28,47 @@ fn compute_min_width(content: &str, wrap: bool) -> u16 {
     }
 }
 
+/// Calculate the border-box rectangle of a box, using shrink-to-fit, given the size available.
+///
+/// The function calculates the width and min-width of the content, applies padding and borders,
+/// and determines the box size.
+/// This function also allows for basic wrapping control, similar to css `white-space` set to `normal` or `nowrap`
+///
+/// Limitations: this function only works with text, and doesn't support other elts
+///
+/// Warning: the returned size may overflow the available rect, so always check for overflow
+fn calculate_box_shrink_to_fit(
+    content: &str,
+    can_wrap: bool,
+    padding: &Padding,
+    borders: bool,
+    available_width: u16,
+) -> Size {
+    let content_width = content.width() as u16;
+    let min_content_width = compute_min_width(content, can_wrap);
+    let box_width = content_width + padding.left + padding.right + if borders { 2 } else { 0 };
+    let min_box_width =
+        min_content_width + padding.left + padding.right + if borders { 2 } else { 0 };
+    let final_width = available_width.clamp(min_box_width, box_width);
+
+    // Now calculate wrapping based on our newly aquired width
+    let content_height = if can_wrap {
+        // Calculate wrapping
+        textwrap::wrap(
+            content,
+            (final_width - padding.left - padding.right - if borders { 2 } else { 0 }) as usize,
+        )
+        .len() as u16
+    } else {
+        // If wrapping isn't allowed, height is straightforward
+        1
+    };
+
+    let final_height = content_height + padding.top + padding.bottom + if borders { 2 } else { 0 };
+
+    Size::new(final_width, final_height)
+}
+
 impl App {
     fn render_frame(&self, area: Rect, buf: &mut Buffer) {
         // Display the current streetview frame
@@ -37,59 +78,59 @@ impl App {
         }
     }
 
+    /// Render the the town and street boxes, approximating the website layout
     fn render_location(&self, area: Rect, buf: &mut Buffer) {
         if let Some(location) = &self.location {
             let content = format!("{}, {}", location.neighborhood, location.country);
-            let is_wide = area.width > WIDE_BREAK;
 
-            let (town_box, padding) = self.compute_town_box_layout(area, &content, is_wide);
-            self.render_town_box(buf, town_box, &content, is_wide, padding);
+            // Compute the properties of the town box
+            let padding = if area.width >= WIDE_BREAK {
+                Padding::uniform(1)
+            } else {
+                Padding::ZERO
+            };
+            let box_size = calculate_box_shrink_to_fit(
+                &content,
+                area.width >= WIDE_BREAK,
+                &padding,
+                true,
+                area.width / 2, // Box should take up half of screen width
+            );
 
-            let street_box = self.compute_street_box_layout(area, town_box, &location.road);
-            self.render_street_box(buf, street_box, &location.road);
+            // Center the rect inside the screen
+            let town_rect = Rect::new(
+                0,
+                if area.width >= WIDE_BREAK { 0 } else { 4 }, // Move it down on narrow displays
+                area.width,
+                box_size.height,
+            )
+            .centered_horizontally(Constraint::Length(box_size.width));
+
+            self.render_town_box(town_rect, buf, &content, padding, area.width >= WIDE_BREAK);
+
+            // Compute the properties of the street box
+            let box_size = calculate_box_shrink_to_fit(
+                &location.road,
+                true, // As per the website, the street name always wraps
+                &Padding::ZERO,
+                true,
+                area.width / 2,
+            );
+
+            let street_rect = Rect::new(0, town_rect.bottom(), area.width, box_size.height)
+                .centered_horizontally(Constraint::Length(box_size.width));
+
+            self.render_street_box(street_rect, buf, &location.road);
         }
-    }
-
-    fn compute_town_box_layout(&self, area: Rect, content: &str, is_wide: bool) -> (Rect, Padding) {
-        let padding = if is_wide {
-            Padding::uniform(1)
-        } else {
-            Padding::ZERO
-        };
-        let box_width = Self::calculate_box_width(content, is_wide, padding, area.width);
-        let box_height = if content.width() as u16 + padding.left + padding.right + 2 <= box_width {
-            1 + padding.top + padding.bottom + 2
-        } else {
-            2 + padding.top + padding.bottom + 2
-        };
-
-        let box_rect = if is_wide {
-            Rect::new(0, 0, area.width, box_height)
-                .centered_horizontally(Constraint::Max(box_width))
-        } else {
-            Rect::new(0, 4, area.width, box_height)
-                .centered_horizontally(Constraint::Max(box_width))
-        };
-
-        (box_rect, padding)
-    }
-
-    fn calculate_box_width(content: &str, is_wide: bool, padding: Padding, area_width: u16) -> u16 {
-        let content_width = content.width() as u16;
-        let min_content_width = compute_min_width(content, is_wide);
-        let preferred = content_width + padding.right + padding.left + 2;
-        let minimum = min_content_width + padding.left + padding.right + 2;
-
-        cmp::min(cmp::max(minimum, area_width / 2), preferred)
     }
 
     fn render_town_box(
         &self,
+        area: Rect,
         buf: &mut Buffer,
-        box_rect: Rect,
         content: &str,
-        is_wide: bool,
         padding: Padding,
+        can_wrap: bool,
     ) {
         let mut town_name = Paragraph::new(content)
             .style(Style::default().bg(Color::Rgb(0, 132, 48)).fg(Color::White))
@@ -101,25 +142,20 @@ impl App {
                     .padding(padding),
             );
 
-        if is_wide {
+        if can_wrap {
             town_name = town_name.wrap(Wrap { trim: true });
         }
 
-        Clear.render(box_rect, buf);
-        town_name.render(box_rect, buf);
+        Clear.render(area, buf);
+        town_name.render(area, buf);
     }
 
-    fn compute_street_box_layout(&self, area: Rect, town_box: Rect, road: &str) -> Rect {
-        Rect::new(0, town_box.bottom(), area.width, 3)
-            .centered_horizontally(Constraint::Max(road.len() as u16 + 2))
-    }
-
-    fn render_street_box(&self, buf: &mut Buffer, street_box: Rect, road: &str) {
+    fn render_street_box(&self, area: Rect, buf: &mut Buffer, road: &str) {
         let street_name = Paragraph::new(road)
             .style(Style::default().bg(Color::White).fg(Color::Black))
             .centered()
             .block(Block::bordered().border_type(BorderType::Rounded));
-        street_name.render(street_box, buf);
+        street_name.render(area, buf);
     }
 
     /// Render the box with the current drivers count in the top right corner of the rect
