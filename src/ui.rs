@@ -28,94 +28,115 @@ fn compute_min_width(content: &str, wrap: bool) -> u16 {
     }
 }
 
-impl Widget for &App {
-    /// Render the whole UI.
-    ///
-    /// TODO: Make this function shorter
-    fn render(self, area: Rect, buf: &mut Buffer) {
+impl App {
+    fn render_frame(&self, area: Rect, buf: &mut Buffer) {
         // Display the current streetview frame
         if let Some(proto) = &self.cur_frame {
             let image = Image::new(proto);
             image.render(area, buf);
         }
+    }
 
+    fn render_location(&self, area: Rect, buf: &mut Buffer) {
         if let Some(location) = &self.location {
             let content = format!("{}, {}", location.neighborhood, location.country);
-            // Do this like in CSS, content, padding, border, using border-box like algorithm
-            // First compute width and min-width, then height, once wrapping is sorted out
+            let is_wide = area.width > WIDE_BREAK;
 
-            let content_width = content.width() as u16;
-            let min_content_width = compute_min_width(&content, area.width > WIDE_BREAK);
+            let (town_box, padding) = self.compute_town_box_layout(area, &content, is_wide);
+            self.render_town_box(buf, town_box, &content, is_wide, padding);
 
-            let padding = if area.width > WIDE_BREAK {
-                Padding::uniform(1)
-            } else {
-                Padding::ZERO
-            };
+            let street_box = self.compute_street_box_layout(area, town_box, &location.road);
+            self.render_street_box(buf, street_box, &location.road);
+        }
+    }
 
-            let preferred_box_width = content_width + padding.right + padding.left + 2; // 2 is for border
-            let min_box_width = min_content_width + padding.left + padding.right + 2;
+    fn compute_town_box_layout(&self, area: Rect, content: &str, is_wide: bool) -> (Rect, Padding) {
+        let padding = if is_wide {
+            Padding::uniform(1)
+        } else {
+            Padding::ZERO
+        };
+        let box_width = Self::calculate_box_width(content, is_wide, padding, area.width);
+        let box_height = if content.width() as u16 + padding.left + padding.right + 2 <= box_width {
+            1 + padding.top + padding.bottom + 2
+        } else {
+            2 + padding.top + padding.bottom + 2
+        };
 
-            let box_width = cmp::min(cmp::max(min_box_width, area.width / 2), preferred_box_width);
+        let box_rect = if is_wide {
+            Rect::new(0, 0, area.width, box_height)
+                .centered_horizontally(Constraint::Max(box_width))
+        } else {
+            Rect::new(0, 4, area.width, box_height)
+                .centered_horizontally(Constraint::Max(box_width))
+        };
 
-            // Now for height
+        (box_rect, padding)
+    }
 
-            // If we didn't wrap
-            let content_height = if preferred_box_width <= box_width {
-                1
-            } else {
-                // We wrapped, for now assume a height of 2
-                // TODO: fix this
-                2
-            };
+    fn calculate_box_width(content: &str, is_wide: bool, padding: Padding, area_width: u16) -> u16 {
+        let content_width = content.width() as u16;
+        let min_content_width = compute_min_width(content, is_wide);
+        let preferred = content_width + padding.right + padding.left + 2;
+        let minimum = min_content_width + padding.left + padding.right + 2;
 
-            let box_height = content_height + padding.top + padding.bottom + 2; // 2 border that is
+        cmp::min(cmp::max(minimum, area_width / 2), preferred)
+    }
 
-            let box_rect = if area.width > WIDE_BREAK {
-                // Wide layout
-                Rect::new(0, 0, area.width, box_height)
-                    .centered_horizontally(Constraint::Max(box_width)) // Width is shrink to fit
-            } else {
-                // Narrow layout
-                Rect::new(0, 4, area.width, box_height)
-                    .centered_horizontally(Constraint::Max(box_width)) // Width is shrink to fit
-            };
+    fn render_town_box(
+        &self,
+        buf: &mut Buffer,
+        box_rect: Rect,
+        content: &str,
+        is_wide: bool,
+        padding: Padding,
+    ) {
+        let mut town_name = Paragraph::new(content)
+            .style(Style::default().bg(Color::Rgb(0, 132, 48)).fg(Color::White))
+            .centered()
+            .bold()
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .padding(padding),
+            );
 
-            let mut town_name = Paragraph::new(content)
-                .style(Style::default().bg(Color::Rgb(0, 132, 48)).fg(Color::White))
-                .centered()
-                .bold()
-                .block(
-                    Block::bordered()
-                        .border_type(BorderType::Rounded)
-                        .padding(padding),
-                );
-
-            if area.width > WIDE_BREAK {
-                town_name = town_name.wrap(Wrap { trim: true });
-            }
-
-            Clear.render(box_rect, buf);
-
-            town_name.render(box_rect, buf);
-
-            let content_rect = Rect::new(0, box_rect.bottom(), area.width, 3)
-                .centered_horizontally(Constraint::Max(location.road.len() as u16 + 2));
-
-            let street_name = Paragraph::new(location.road.clone())
-                .style(Style::default().bg(Color::White).fg(Color::Black))
-                .centered()
-                .block(Block::bordered().border_type(BorderType::Rounded));
-            street_name.render(content_rect, buf);
+        if is_wide {
+            town_name = town_name.wrap(Wrap { trim: true });
         }
 
+        Clear.render(box_rect, buf);
+        town_name.render(box_rect, buf);
+    }
+
+    fn compute_street_box_layout(&self, area: Rect, town_box: Rect, road: &str) -> Rect {
+        Rect::new(0, town_box.bottom(), area.width, 3)
+            .centered_horizontally(Constraint::Max(road.len() as u16 + 2))
+    }
+
+    fn render_street_box(&self, buf: &mut Buffer, street_box: Rect, road: &str) {
+        let street_name = Paragraph::new(road)
+            .style(Style::default().bg(Color::White).fg(Color::Black))
+            .centered()
+            .block(Block::bordered().border_type(BorderType::Rounded));
+        street_name.render(street_box, buf);
+    }
+
+    /// Render the box with the current drivers count in the top right corner of the rect
+    fn render_drivers_online(&self, area: Rect, buf: &mut Buffer) {
         let content: Line = vec![
             "● ".red(),
             format!("{} drivers online", self.users_online).black(),
         ]
         .into();
         let content_width = content.width() as u16 + 4;
-        let content_rect = Rect::new(area.width - content_width, 0, content_width, 3);
+        let content_rect = Rect::new(
+            area.width.saturating_sub(content_width),
+            0,
+            content_width,
+            3,
+        )
+        .clamp(area);
         Clear.render(content_rect, buf);
         let drivers_online = Paragraph::new(content)
             .style(Style::default().bg(Color::Rgb(255, 242, 2)))
@@ -123,7 +144,9 @@ impl Widget for &App {
             .block(Block::bordered().border_type(BorderType::Rounded).black())
             .bold();
         drivers_online.render(content_rect, buf);
+    }
 
+    fn render_vote_counts(&self, area: Rect, buf: &mut Buffer) {
         // Render the vote counts box
         if let Some(end_time) = self.vote_ends
             && let Some((_, heading)) = &self.current_pano
@@ -135,7 +158,13 @@ impl Widget for &App {
                 "Picking option...".to_string()
             };
             let content_width = 21;
-            let content_rect = Rect::new(area.width - content_width, 4, content_width, 18);
+            let content_rect = Rect::new(
+                area.width.saturating_sub(content_width),
+                4,
+                content_width,
+                18,
+            )
+            .clamp(area);
             let block = Block::bordered()
                 .border_type(BorderType::Rounded)
                 .bg(Color::Rgb(255, 255, 255))
@@ -200,13 +229,15 @@ impl Widget for &App {
                     counts_rect.y + (offset as u16 * 2),
                     counts_rect.width,
                     1,
-                );
+                )
+                .clamp(area);
                 let gauge_rect = Rect::new(
                     text_rect.x + 2,
                     text_rect.y + 1,
                     text_rect.width - 2,
                     text_rect.height,
-                );
+                )
+                .clamp(area);
 
                 text.render(text_rect, buf);
                 percent.render(text_rect, buf);
@@ -216,33 +247,169 @@ impl Widget for &App {
     }
 }
 
-#[test]
-fn test_min_width() {
-    assert_eq!(compute_min_width("123 1234", true), 4);
-    assert_eq!(
-        compute_min_width("Town of East Hampton, United States of America", true),
-        8
-    );
+impl Widget for &App {
+    /// Render the whole UI.
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.render_frame(area, buf);
+        self.render_location(area, buf);
+        self.render_drivers_online(area, buf);
+        self.render_vote_counts(area, buf);
+    }
 }
 
-#[test]
-fn test_min_width_no_wrap() {
-    assert_eq!(compute_min_width("123 1234", false), 8);
-}
+#[cfg(test)]
+mod tests {
 
-#[test]
-fn test_min_width_empty() {
-    assert_eq!(compute_min_width("", true), 0);
-}
+    use std::collections::HashMap;
 
-#[test]
-fn test_min_width_single_word() {
-    assert_eq!(compute_min_width("hello", true), 5);
-}
+    use crate::{event::EventHandler, roadtrip::Location};
 
-#[test]
-fn test_min_width_unicode() {
-    // "é" = width 1, "界" = width 2
-    assert_eq!(compute_min_width("éé é", true), 2);
-    assert_eq!(compute_min_width("hello 世界", true), 5);
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    /// check if the area and content (raw text) of two buffers are the same
+    pub fn assert_buffer_eq(buffer: &ratatui::buffer::Buffer, expected: &ratatui::buffer::Buffer) {
+        // if this is false, the test passes
+        if buffer.area() != expected.area()
+            || !buffer
+                .content()
+                .iter()
+                .zip(expected.content().iter())
+                .all(|(a, b)| a.symbol() == b.symbol())
+        {
+            // otherwise, let's "assert" that they are the same, simply so that `pretty_assertions::assert_eq` will print the diff
+            pretty_assertions::assert_eq!(buffer, expected);
+        }
+    }
+
+    #[test]
+    fn test_full_render() {
+        let (tx, _) = tokio::sync::mpsc::channel(100);
+        let app = App::new(EventHandler::new_deterministic(), tx);
+
+        let area = Rect::new(0, 0, 100, 50);
+        let mut buf = Buffer::empty(area);
+        app.render(area, &mut buf);
+
+        // Narrow
+        let area = Rect::new(0, 0, 20, 70);
+        let mut buf = Buffer::empty(area);
+        app.render(area, &mut buf);
+
+        // Very small
+        let area = Rect::new(0, 0, 5, 5);
+        let mut buf = Buffer::empty(area);
+        app.render(area, &mut buf);
+
+        // Very wide
+        let area = Rect::new(0, 0, 300, 50);
+        let mut buf = Buffer::empty(area);
+        app.render(area, &mut buf);
+    }
+
+    #[test]
+    fn test_render_drivers_online() {
+        let (tx, _) = tokio::sync::mpsc::channel(100);
+        let mut app = App::new(EventHandler::new_deterministic(), tx);
+        app.users_online = 100;
+
+        let area = Rect::new(0, 0, 30, 5);
+        let mut buf = Buffer::empty(area);
+        app.render_drivers_online(area, &mut buf);
+
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                "      ╭──────────────────────╮",
+                "      │ ● 100 drivers online │",
+                "      ╰──────────────────────╯",
+                "                              ",
+                "                              ",
+            ]),
+        );
+
+        // Text is clipped if the rect is too narrow
+        let area = Rect::new(0, 0, 10, 5);
+        let mut buf = Buffer::empty(area);
+        app.render_drivers_online(area, &mut buf);
+
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                "╭────────╮",
+                "│● 100 dr│",
+                "╰────────╯",
+                "          ",
+                "          ",
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_location_render() {
+        let (tx, _) = tokio::sync::mpsc::channel(100);
+        let mut app = App::new(EventHandler::new_deterministic(), tx);
+
+        app.location = Some(Location {
+            neighborhood: "Town of East Hampton".to_string(), // Wide text for testing
+            country: "United States of America".to_string(),
+            road: "Main Street".to_string(),
+            county: "Suffolk County".to_string(), // Random
+            state: "New York".to_string(),        // Random
+        });
+
+        let area = Rect::new(0, 0, 100, 10); // Wide layout
+        let mut buf = Buffer::empty(area);
+        app.render_location(area, &mut buf);
+
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                //         1         2.        3.        4         5.        6.        7.        8.        9.        0
+                //1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
+                "                         ╭────────────────────────────────────────────────╮                         ",
+                "                         │                                                │                         ",
+                "                         │ Town of East Hampton, United States of America │                         ",
+                "                         │                                                │                         ",
+                "                         ╰────────────────────────────────────────────────╯                         ",
+                "                                            ╭───────────╮                                           ",
+                "                                            │Main Street│                                           ",
+                "                                            ╰───────────╯                                           ",
+                "                                                                                                    ",
+                "                                                                                                    ",
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_min_width() {
+        assert_eq!(compute_min_width("123 1234", true), 4);
+        assert_eq!(
+            compute_min_width("Town of East Hampton, United States of America", true),
+            8
+        );
+    }
+
+    #[test]
+    fn test_min_width_no_wrap() {
+        assert_eq!(compute_min_width("123 1234", false), 8);
+    }
+
+    #[test]
+    fn test_min_width_empty() {
+        assert_eq!(compute_min_width("", true), 0);
+    }
+
+    #[test]
+    fn test_min_width_single_word() {
+        assert_eq!(compute_min_width("hello", true), 5);
+    }
+
+    #[test]
+    fn test_min_width_unicode() {
+        // "é" = width 1, "界" = width 2
+        assert_eq!(compute_min_width("éé é", true), 2);
+        assert_eq!(compute_min_width("hello 世界", true), 5);
+    }
 }
