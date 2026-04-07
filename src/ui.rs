@@ -227,7 +227,7 @@ impl App {
 
             for (offset, (idx, count)) in vote_counts.iter().take(4).enumerate() {
                 let mut emoji = match idx {
-                    -1 => "⏭",
+                    -1 => "⏩",
                     -2 => "📢",
                     0.. => {
                         let aro_heading = self.vote_options[**idx as usize].heading;
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_location_render() {
+    fn test_render_location_narrow() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
         let mut app = App::new(EventHandler::new_deterministic(), tx);
 
@@ -395,25 +395,113 @@ mod tests {
             state: "New York".to_string(),        // Random
         });
 
-        let area = Rect::new(0, 0, 100, 10); // Wide layout
+        let area = Rect::new(0, 0, 10, 10); // Narrow, this is practical, not realistic
         let mut buf = Buffer::empty(area);
         app.render_location(area, &mut buf);
 
         assert_buffer_eq(
             &buf,
             &Buffer::with_lines(vec![
-                //         1         2.        3.        4         5.        6.        7.        8.        9.        0
-                //1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890
-                "                         ╭────────────────────────────────────────────────╮                         ",
-                "                         │                                                │                         ",
-                "                         │ Town of East Hampton, United States of America │                         ",
-                "                         │                                                │                         ",
-                "                         ╰────────────────────────────────────────────────╯                         ",
-                "                                            ╭───────────╮                                           ",
-                "                                            │Main Street│                                           ",
-                "                                            ╰───────────╯                                           ",
-                "                                                                                                    ",
-                "                                                                                                    ",
+                "          ",
+                "          ",
+                "          ",
+                "          ",
+                "╭────────╮",
+                "│Town of │",
+                "╰────────╯",
+                " ╭──────╮ ",
+                " │Main S│ ", // At least text truncation is tested
+                " ╰──────╯ ",
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_render_location_wide() {
+        let (tx, _) = tokio::sync::mpsc::channel(100);
+        let mut app = App::new(EventHandler::new_deterministic(), tx);
+
+        app.location = Some(Location {
+            neighborhood:
+                "Town of East Hampton, East Historical Village District, Bla bla bla bla bla bla"
+                    .to_string(), // Wide text for testing
+            country: "United States of America".to_string(),
+            road: "Main Street".to_string(),
+            county: "Suffolk County".to_string(), // Random
+            state: "New York".to_string(),        // Random
+        });
+
+        let area = Rect::new(0, 0, WIDE_BREAK, 10); // Test wide layout
+        let mut buf = Buffer::empty(area);
+        app.render_location(area, &mut buf);
+
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                // Rustfmt i will kill you if you format this differently
+                "                       ╭────────────────────────────────────────────╮                       ",
+                "                       │                                            │                       ",
+                "                       │    Town of East Hampton, East Historical   │                       ",
+                "                       │ Village District, Bla bla bla bla bla bla, │                       ",
+                "                       │          United States of America          │                       ",
+                "                       │                                            │                       ",
+                "                       ╰────────────────────────────────────────────╯                       ",
+                "                                        ╭───────────╮                                       ",
+                "                                        │Main Street│                                       ",
+                "                                        ╰───────────╯                                       ",
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_vote_counts() {
+        let (tx, _) = tokio::sync::mpsc::channel(100);
+        let mut app = App::new(EventHandler::new_deterministic(), tx);
+
+        app.vote_ends = Some(Utc::now() + chrono::Duration::seconds(7));
+        app.current_pano = Some((String::new(), 90.0));
+        app.vote_options = vec![
+            crate::roadtrip::VoteOption {
+                heading: 90.0,
+                pano: String::new(),
+                description: None,
+            },
+            crate::roadtrip::VoteOption {
+                heading: 170.0,
+                pano: String::new(),
+                description: None,
+            },
+        ];
+        // Seek five, forward, 10 and right 15
+        app.vote_counts = HashMap::from([(-1, 5), (0, 10), (1, 15)]);
+
+        let area = Rect::new(0, 0, 30, 20);
+        let mut buf = Buffer::empty(area);
+        app.render_vote_counts(area, &mut buf);
+
+        assert_buffer_eq(
+            &buf,
+            &Buffer::with_lines(vec![
+                "                              ",
+                "                              ",
+                "         ╭───────────────────╮",
+                "         │Picking option in 6│",
+                "         │seconds...         │",
+                "         │                   │",
+                "         │➡️ 15 votes     50%│", // hidden by multi-width symbols: [(11, " ")]
+                "         │   ━━━━━━━━        │",
+                "         │⬆️ 10 votes     33%│", // hidden by multi-width symbols: [(11, " ")]
+                "         │   ━━━━━           │",
+                "         │⏩ 5 votes      17%│",
+                "         │   ━━              │",
+                "         │                   │",
+                "         │                   │",
+                "         │                   │",
+                "         │                   │",
+                "         │                   │",
+                "         │                   │",
+                "         │                   │",
+                "         ╰───────────────────╯",
             ]),
         );
     }
