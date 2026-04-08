@@ -159,8 +159,6 @@ fn decode_panoid(panoid: &str) -> Pano {
 /// Returns `None` on any network/error condition.
 ///
 /// Stolen from Mikarific/LookoutTheWindow
-///
-/// TODO: make this AI slop a little less sloppy
 /// 
 /// # Errors
 /// 
@@ -188,216 +186,83 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
     }
     let meta: Value = res.json().await?;
 
-    // extract the simple fields
-    let pano_vec = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][1]"))?;
-    let p_type = pano_vec
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][1][0] (pano type)"))?
-        .as_i64()
-        .ok_or(anyhow!("invalid pano type (expected integer)"))?;
-    let p_id = pano_vec
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][1][1] (pano id)"))?
-        .as_str()
-        .ok_or(anyhow!("invalid pano id (expected string)"))?
-        .to_owned();
+    // Helper to extract nested f64
+    let get_f64 = |path: &[usize]| -> anyhow::Result<f64> {
+        let mut val = &meta;
+        for &idx in path {
+            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_f64().ok_or_else(|| anyhow!("expected f64 at path: {path:?}"))
+    };
 
-    assert_eq!(p_type as u8, pano.pano_type as u8);
+    // Helper to extract nested u64
+    let get_u64 = |value: &Value, path: &[usize]| -> anyhow::Result<u64> {
+        let mut val = value;
+        for &idx in path {
+            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_u64().ok_or_else(|| anyhow!("expected u64 at path: {path:?}"))
+    };
+
+    // Helper to extract nested str
+    let get_str = |path: &[usize]| -> anyhow::Result<&str> {
+        let mut val = &meta;
+        for &idx in path {
+            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_str().ok_or_else(|| anyhow!("expected str at path: {path:?}"))
+    };
+
+    // Helper to extract nested vec
+    let get_vec = |path: &[usize]| -> anyhow::Result<&Vec<Value>> {
+        let mut val = &meta;
+        for &idx in path {
+            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_array().ok_or_else(|| anyhow!("expected array at path: {path:?}"))
+    };
+
+    // Extract pano info
+    let p_type = get_u64(&meta, &[1, 0, 1, 0])? as u8;
+    let p_id = get_str(&[1, 0, 1, 1])?.to_owned();
+    assert_eq!(p_type, pano.pano_type as u8);
     assert_eq!(p_id, pano.id);
 
-    let lat = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(5)
-        .ok_or(anyhow!("missing meta[1][0][5]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0][2] (latitude)"))?
-        .as_f64()
-        .ok_or(anyhow!("invalid latitude (expected number)"))?;
-    let lng = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(5)
-        .ok_or(anyhow!("missing meta[1][0][5]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0][3] (longitude)"))?
-        .as_f64()
-        .ok_or(anyhow!("invalid longitude (expected number)"))?;
+    // Location
+    let lat = get_f64(&[1, 0, 5, 0, 1, 0, 2])?;
+    let lng = get_f64(&[1, 0, 5, 0, 1, 0, 3])?;
 
-    let image_width = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2][2]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][2][1] (image width)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid image width (expected integer)"))? as u32;
-    let image_height = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2][2]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][2][2][0] (image height)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid image height (expected integer)"))? as u32;
-    let tile_width = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][2][3]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1][1] (tile width)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid tile width (expected integer)"))? as u32;
-    let tile_height = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][2][3]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1][0] (tile height)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid tile height (expected integer)"))? as u32;
+    // Image dimensions
+    let image_width = get_u64(&meta, &[1, 0, 2, 2, 1])? as u32;
+    let image_height = get_u64(&meta, &[1, 0, 2, 2, 0])? as u32;
+    let tile_width = get_u64(&meta, &[1, 0, 2, 3, 1, 1])? as u32;
+    let tile_height = get_u64(&meta, &[1, 0, 2, 3, 1, 0])? as u32;
 
-    let zoom_array = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][2][3]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][2][3][0] (zoom levels)"))?
-        .as_array()
-        .ok_or(anyhow!("invalid zoom levels (expected array)"))?;
+    // Zoom levels
+    let zoom_array = get_vec(&[1,0,2,3,0])?;
+
     let max_zoom = zoom_array.len().saturating_sub(1);
     let mut zoom_levels = Vec::new();
     for zoom in zoom_array {
-        let crop_width =
-            zoom.get(0)
-                .ok_or(anyhow!("missing zoom[0]"))?
-                .get(1)
-                .ok_or(anyhow!("missing zoom[0][1] (crop width)"))?
-                .as_u64()
-                .ok_or(anyhow!("invalid crop width (expected integer)"))? as u32;
-        let crop_height =
-            zoom.get(0)
-                .ok_or(anyhow!("missing zoom[0]"))?
-                .get(0)
-                .ok_or(anyhow!("missing zoom[0][0] (crop height)"))?
-                .as_u64()
-                .ok_or(anyhow!("invalid crop height (expected integer)"))? as u32;
-        let num_tiles_x = crop_width.div_ceil(tile_width) as u32;
-        let num_tiles_y = crop_height.div_ceil(tile_height) as u32;
-        zoom_levels.push(ZoomLevel {
-            crop_width,
-            crop_height,
-            num_tiles_x,
-            num_tiles_y,
-        });
+        let crop_width = get_u64(zoom, &[0, 1])? as u32;
+        let crop_height = get_u64(zoom, &[0, 0])? as u32;
+        let num_tiles_x = crop_width.div_ceil(tile_width);
+        let num_tiles_y = crop_height.div_ceil(tile_height);
+        zoom_levels.push(ZoomLevel { crop_width, crop_height, num_tiles_x, num_tiles_y });
     }
 
-    let heading_tilt_roll_arr = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(5)
-        .ok_or(anyhow!("missing meta[1][0][5]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1] (heading/tilt/roll)"))?
-        .as_array();
-    let (heading, tilt, roll) = if let Some(arr) = heading_tilt_roll_arr {
+    // Heading/Tilt/Roll
+    let heading_tilt_roll_arr = get_vec(&[1,0,5,0,1]);
+    let (heading, tilt, roll) = if let Ok(arr) = heading_tilt_roll_arr {
         if arr.len() >= 3 {
-            let inner = arr[2].as_array().ok_or(anyhow!(
-                "missing meta[1][0][5][0][1][2] (heading/tilt/roll array)"
-            ))?;
-            (
-                inner
-                    .first()
-                    .ok_or(anyhow!("missing heading value"))?
-                    .as_f64()
-                    .unwrap_or(0.0),
-                inner
-                    .get(1)
-                    .ok_or(anyhow!("missing tilt value"))?
-                    .as_f64()
-                    .unwrap_or(90.0),
-                inner
-                    .get(2)
-                    .ok_or(anyhow!("missing roll value"))?
-                    .as_f64()
-                    .unwrap_or(0.0),
-            )
-        } else {
-            (0.0, 90.0, 0.0)
-        }
-    } else {
-        (0.0, 90.0, 0.0)
-    };
+            let inner = arr[2].as_array().ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2]"))?;
+            (inner.first().ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][0]"))?.as_f64().unwrap_or(0.0),
+             inner.get(1).ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][1]"))?.as_f64().unwrap_or(90.0),
+             inner.get(2).ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][2]"))?.as_f64().unwrap_or(0.0))
+        } else { (0.0, 90.0, 0.0) }
+    } else { (0.0, 90.0, 0.0) };
 
-    Ok(PanoMetadata {
-        pano,
-        lat,
-        lng,
-        image_width,
-        image_height,
-        tile_width,
-        tile_height,
-        max_zoom,
-        zoom_levels,
-        heading,
-        tilt,
-        roll,
-    })
+    Ok(PanoMetadata { pano, lat, lng, image_width, image_height, tile_width, tile_height, max_zoom, zoom_levels, heading, tilt, roll })
 }
 
 async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
