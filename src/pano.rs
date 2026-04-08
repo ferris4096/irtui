@@ -161,9 +161,9 @@ fn decode_panoid(panoid: &str) -> Pano {
 /// Stolen from Mikarific/LookoutTheWindow
 ///
 /// TODO: make this AI slop a little less sloppy
-///
+/// 
 /// # Errors
-///
+/// 
 /// This fails if the network fails, or if we fail to parse the response json for some reason
 #[instrument(level = "debug")]
 pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMetadata> {
@@ -674,8 +674,6 @@ pub fn spawn_rendering_task(
             // Now only do the necessary work
             if needs_render {
                 // Fetch the current pano if needed
-                let width = cur_size.0 * font_size.0;
-                let height = cur_size.1 * font_size.1;
 
                 // Render the pano
                 let meta = match get_pano_metadata_from_id(&cur_panoid).await {
