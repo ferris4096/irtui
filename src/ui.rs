@@ -16,7 +16,7 @@ const WIDE_BREAK: u16 = 92;
 
 use crate::app::App;
 
-// Compute min_width of a piece of text (kinda like css min-width I think)
+/// Compute the minimum width of a piece of text (kinda like css min-width I think)
 fn compute_min_width(content: &str, wrap: bool) -> u16 {
     if wrap {
         // If we can wrap, calculate the longest word
@@ -40,7 +40,7 @@ fn compute_min_width(content: &str, wrap: bool) -> u16 {
 fn calculate_box_shrink_to_fit(
     content: &str,
     can_wrap: bool,
-    padding: &Padding,
+    padding: Padding,
     borders: bool,
     available_width: u16,
 ) -> Size {
@@ -70,6 +70,7 @@ fn calculate_box_shrink_to_fit(
 }
 
 impl App {
+    /// Render the current streetview frame as the background of the UI
     fn render_frame(&self, area: Rect, buf: &mut Buffer) {
         // Display the current streetview frame
         if let Some(proto) = &self.cur_frame {
@@ -92,7 +93,7 @@ impl App {
             let box_size = calculate_box_shrink_to_fit(
                 &content,
                 area.width >= WIDE_BREAK,
-                &padding,
+                padding,
                 true,
                 area.width / 2, // Box should take up half of screen width
             );
@@ -106,13 +107,13 @@ impl App {
             )
             .centered_horizontally(Constraint::Length(box_size.width));
 
-            self.render_town_box(town_rect, buf, &content, padding, area.width >= WIDE_BREAK);
+            App::render_town_box(town_rect, buf, &content, padding, area.width >= WIDE_BREAK);
 
             // Compute the properties of the street box
             let box_size = calculate_box_shrink_to_fit(
                 &location.road,
                 true, // As per the website, the street name always wraps
-                &Padding::ZERO,
+                Padding::ZERO,
                 true,
                 area.width / 2,
             );
@@ -120,12 +121,12 @@ impl App {
             let street_rect = Rect::new(0, town_rect.bottom(), area.width, box_size.height)
                 .centered_horizontally(Constraint::Length(box_size.width));
 
-            self.render_street_box(street_rect, buf, &location.road);
+            App::render_street_box(street_rect, buf, &location.road);
         }
     }
 
+    /// Render the top green box with the town name
     fn render_town_box(
-        &self,
         area: Rect,
         buf: &mut Buffer,
         content: &str,
@@ -150,11 +151,14 @@ impl App {
         town_name.render(area, buf);
     }
 
-    fn render_street_box(&self, area: Rect, buf: &mut Buffer, road: &str) {
+    /// Render the white box with the street name in the given `area`
+    fn render_street_box(area: Rect, buf: &mut Buffer, road: &str) {
         let street_name = Paragraph::new(road)
             .style(Style::default().bg(Color::White).fg(Color::Black))
             .centered()
+            .wrap(Wrap { trim: false })
             .block(Block::bordered().border_type(BorderType::Rounded));
+        Clear.render(area, buf);
         street_name.render(area, buf);
     }
 
@@ -182,6 +186,7 @@ impl App {
         drivers_online.render(content_rect, buf);
     }
 
+    /// Render the vote counts box, below the drivers count
     fn render_vote_counts(&self, area: Rect, buf: &mut Buffer) {
         // Render the vote counts box
         if let Some(end_time) = self.vote_ends
@@ -293,6 +298,7 @@ impl Widget for &App {
     }
 }
 
+/// UI tests, they are long, they are clunky, this is normal
 #[cfg(test)]
 mod tests {
 
@@ -395,7 +401,7 @@ mod tests {
             state: "New York".to_string(),        // Random
         });
 
-        let area = Rect::new(0, 0, 10, 10); // Narrow, this is practical, not realistic
+        let area = Rect::new(0, 0, 10, 11); // Narrow, this is practical, not realistic
         let mut buf = Buffer::empty(area);
         app.render_location(area, &mut buf);
 
@@ -410,7 +416,8 @@ mod tests {
                 "│Town of │",
                 "╰────────╯",
                 " ╭──────╮ ",
-                " │Main S│ ", // At least text truncation is tested
+                " │ Main │ ",
+                " │Street│ ", // At least text truncation is tested
                 " ╰──────╯ ",
             ]),
         );
@@ -426,12 +433,12 @@ mod tests {
                 "Town of East Hampton, East Historical Village District, Bla bla bla bla bla bla"
                     .to_string(), // Wide text for testing
             country: "United States of America".to_string(),
-            road: "Main Street".to_string(),
+            road: "Very very loooong street street street street name name".to_string(),
             county: "Suffolk County".to_string(), // Random
             state: "New York".to_string(),        // Random
         });
 
-        let area = Rect::new(0, 0, WIDE_BREAK, 10); // Test wide layout
+        let area = Rect::new(0, 0, WIDE_BREAK, 11); // Test wide layout
         let mut buf = Buffer::empty(area);
         app.render_location(area, &mut buf);
 
@@ -446,9 +453,10 @@ mod tests {
                 "                       │          United States of America          │                       ",
                 "                       │                                            │                       ",
                 "                       ╰────────────────────────────────────────────╯                       ",
-                "                                        ╭───────────╮                                       ",
-                "                                        │Main Street│                                       ",
-                "                                        ╰───────────╯                                       ",
+                "                       ╭────────────────────────────────────────────╮                       ",
+                "                       │   Very very loooong street street street   │                       ",
+                "                       │              street name name              │                       ",
+                "                       ╰────────────────────────────────────────────╯                       ",
             ]),
         );
     }

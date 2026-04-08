@@ -23,6 +23,7 @@ pub struct VoteOption {
     pub pano: String,
 }
 
+/// And event we get from the neal.fun websocket
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct WSEvent {
@@ -37,6 +38,7 @@ pub struct WSEvent {
     pub end_time: DateTime<Utc>,
 }
 
+/// Our current location, as per the websocket
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Location {
     pub road: String,
@@ -52,6 +54,10 @@ pub struct WSBackend {
 }
 
 impl WSBackend {
+    /// Asynchronously connect to the IRT websocket
+    ///
+    /// ## Errors
+    /// This fails if we can't connect to the websocket for some reason
     pub async fn new() -> Result<Self, anyhow::Error> {
         let (socket, _response) =
             connect_async("wss://internet-roadtrip-listen-eqzms.ondigitalocean.app/")

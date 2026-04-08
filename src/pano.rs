@@ -599,14 +599,18 @@ pub fn render_pano_from_metadata(
     Ok(rendered)
 }
 
+/// Spawn the task responsible for fetching and rendering gsv panos.
+///
+/// # Errors
+/// This fails if we fail to spawn the task e.g. we fail to query the terminal size
 pub fn spawn_rendering_task(
     mut pano_rx: tokio::sync::mpsc::Receiver<PanoRequest>,
     evt_sender: tokio::sync::mpsc::UnboundedSender<Event>,
-) {
-    tokio::task::spawn(async move {
-        let picker = Picker::halfblocks();
+) -> anyhow::Result<()> {
+    let picker = Picker::halfblocks(); // TODO: Support real image protocols but for now support for text on top of images is too flaky
+    let mut cur_size = crossterm::terminal::size()?;
 
-        let mut cur_size = crossterm::terminal::size().expect("Failed to query terminal size");
+    tokio::task::spawn(async move {
         let font_size = picker.font_size();
 
         let mut meta_cache = None;
@@ -722,6 +726,7 @@ pub fn spawn_rendering_task(
             }
         }
     });
+    Ok(())
 }
 
 #[cfg(test)]

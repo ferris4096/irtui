@@ -55,8 +55,8 @@ pub struct App {
     pub vote_ends: Option<DateTime<Utc>>,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub fn with_default_term() -> anyhow::Result<Self> {
         // Spawn the default pano rendering task
         let evt_handler = EventHandler::new();
         let (pano_tx, pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10); // Idk why ten but why not?
@@ -64,12 +64,11 @@ impl Default for App {
         let evt_sender = evt_handler.sender.clone(); // So that rendering task can report back
 
         debug!("Spawning pano rendering task");
-        spawn_rendering_task(pano_rx, evt_sender);
-        App::new(evt_handler, pano_tx)
-    }
-}
+        spawn_rendering_task(pano_rx, evt_sender)?;
 
-impl App {
+        Ok(App::new(evt_handler, pano_tx))
+    }
+
     /// Constructs a new instance of [`App`], given and event source and a pano sender
     #[must_use]
     pub fn new(evt_handler: EventHandler, pano_tx: Sender<PanoRequest>) -> Self {
@@ -208,7 +207,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "uses crossterm backend"]
     async fn test_app_default() {
-        let app = App::default();
+        let app = App::with_default_term().unwrap();
         assert!(app.running);
         assert!(app.current_pano.is_none());
         assert!(app.location.is_none());
