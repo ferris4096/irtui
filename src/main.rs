@@ -1,3 +1,11 @@
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_lossless,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation
+)]
+
 use std::fs::{self, File};
 
 use tracing::{Level, info};
@@ -30,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Initializing terminal");
     let terminal = ratatui::init();
     info!("Lauching app");
-    let result = App::new().run(terminal).await;
+    let result = App::with_default_term()?.run(terminal).await;
     info!("Exiting...");
     ratatui::restore();
     result

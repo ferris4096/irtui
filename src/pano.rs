@@ -3,10 +3,17 @@ use std::{f32::consts::PI, io::Cursor, sync::Arc, time::Instant};
 use anyhow::anyhow;
 use base64::{Engine as _, engine::general_purpose};
 use image::{GenericImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
+use ratatui::layout::Rect;
+use ratatui_image::{Resize, picker::Picker};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
+
+use crate::{
+    app::PanoRequest,
+    event::{AppEvent, Event},
+};
 
 // All of this is adapted from Mikarific/LookoutTheWindow
 
@@ -67,9 +74,8 @@ fn decode_panoid(panoid: &str) -> Pano {
         // dot is used for padding in the JS code
         b64 = b64.replace('.', "=");
 
-        let bytes = match general_purpose::STANDARD.decode(&b64) {
-            Ok(b) => b,
-            Err(_) => return None,
+        let Ok(bytes) = general_purpose::STANDARD.decode(&b64) else {
+            return None;
         };
 
         let mut index = 0;
@@ -120,7 +126,7 @@ fn decode_panoid(panoid: &str) -> Pano {
         let pano_type = match ty {
             2 => PanoType::Official,
             10 => PanoType::Unofficial,
-            _ => PanoType::Official,
+            _ => unreachable!(),
         };
 
         Some(Pano { pano_type, id })
@@ -149,12 +155,14 @@ fn decode_panoid(panoid: &str) -> Pano {
     }
 }
 
-/// Fetch metadata for a panorama ID using the MapsJs internal service.
+/// Fetch metadata for a panorama ID using the `MapsJs` internal service.
 /// Returns `None` on any network/error condition.
 ///
 /// Stolen from Mikarific/LookoutTheWindow
 ///
-/// TODO: make this AI slop a little less sloppy
+/// # Errors
+///
+/// This fails if the network fails, or if we fail to parse the response json for some reason
 #[instrument(level = "debug")]
 pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMetadata> {
     let pano = decode_panoid(pano_id);
@@ -178,153 +186,80 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
     }
     let meta: Value = res.json().await?;
 
-    // extract the simple fields
-    let pano_vec = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][1]"))?;
-    let p_type = pano_vec
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][1][0] (pano type)"))?
-        .as_i64()
-        .ok_or(anyhow!("invalid pano type (expected integer)"))?;
-    let p_id = pano_vec
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][1][1] (pano id)"))?
-        .as_str()
-        .ok_or(anyhow!("invalid pano id (expected string)"))?
-        .to_owned();
+    // Helper to extract nested f64
+    let get_f64 = |path: &[usize]| -> anyhow::Result<f64> {
+        let mut val = &meta;
+        for &idx in path {
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_f64()
+            .ok_or_else(|| anyhow!("expected f64 at path: {path:?}"))
+    };
 
-    assert_eq!(p_type as u8, pano.pano_type as u8);
+    // Helper to extract nested u64
+    let get_u64 = |value: &Value, path: &[usize]| -> anyhow::Result<u64> {
+        let mut val = value;
+        for &idx in path {
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_u64()
+            .ok_or_else(|| anyhow!("expected u64 at path: {path:?}"))
+    };
+
+    // Helper to extract nested str
+    let get_str = |path: &[usize]| -> anyhow::Result<&str> {
+        let mut val = &meta;
+        for &idx in path {
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_str()
+            .ok_or_else(|| anyhow!("expected str at path: {path:?}"))
+    };
+
+    // Helper to extract nested vec
+    let get_vec = |path: &[usize]| -> anyhow::Result<&Vec<Value>> {
+        let mut val = &meta;
+        for &idx in path {
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+        }
+        val.as_array()
+            .ok_or_else(|| anyhow!("expected array at path: {path:?}"))
+    };
+
+    // Extract pano info
+    let p_type = get_u64(&meta, &[1, 0, 1, 0])? as u8;
+    let p_id = get_str(&[1, 0, 1, 1])?.to_owned();
+    assert_eq!(p_type, pano.pano_type as u8);
     assert_eq!(p_id, pano.id);
 
-    let lat = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(5)
-        .ok_or(anyhow!("missing meta[1][0][5]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0][2] (latitude)"))?
-        .as_f64()
-        .ok_or(anyhow!("invalid latitude (expected number)"))?;
-    let lng = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(5)
-        .ok_or(anyhow!("missing meta[1][0][5]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1][0][3] (longitude)"))?
-        .as_f64()
-        .ok_or(anyhow!("invalid longitude (expected number)"))?;
+    // Location
+    let lat = get_f64(&[1, 0, 5, 0, 1, 0, 2])?;
+    let lng = get_f64(&[1, 0, 5, 0, 1, 0, 3])?;
 
-    let image_width = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2][2]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][2][1] (image width)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid image width (expected integer)"))? as u32;
-    let image_height = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2][2]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][2][2][0] (image height)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid image height (expected integer)"))? as u32;
-    let tile_width = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][2][3]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1][1] (tile width)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid tile width (expected integer)"))? as u32;
-    let tile_height = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][2][3]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][2][3][1][0] (tile height)"))?
-        .as_u64()
-        .ok_or(anyhow!("invalid tile height (expected integer)"))? as u32;
+    // Image dimensions
+    let image_width = get_u64(&meta, &[1, 0, 2, 2, 1])? as u32;
+    let image_height = get_u64(&meta, &[1, 0, 2, 2, 0])? as u32;
+    let tile_width = get_u64(&meta, &[1, 0, 2, 3, 1, 1])? as u32;
+    let tile_height = get_u64(&meta, &[1, 0, 2, 3, 1, 0])? as u32;
 
-    let zoom_array = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(2)
-        .ok_or(anyhow!("missing meta[1][0][2]"))?
-        .get(3)
-        .ok_or(anyhow!("missing meta[1][0][2][3]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][2][3][0] (zoom levels)"))?
-        .as_array()
-        .ok_or(anyhow!("invalid zoom levels (expected array)"))?;
+    // Zoom levels
+    let zoom_array = get_vec(&[1, 0, 2, 3, 0])?;
+
     let max_zoom = zoom_array.len().saturating_sub(1);
     let mut zoom_levels = Vec::new();
     for zoom in zoom_array {
-        let crop_width =
-            zoom.get(0)
-                .ok_or(anyhow!("missing zoom[0]"))?
-                .get(1)
-                .ok_or(anyhow!("missing zoom[0][1] (crop width)"))?
-                .as_u64()
-                .ok_or(anyhow!("invalid crop width (expected integer)"))? as u32;
-        let crop_height =
-            zoom.get(0)
-                .ok_or(anyhow!("missing zoom[0]"))?
-                .get(0)
-                .ok_or(anyhow!("missing zoom[0][0] (crop height)"))?
-                .as_u64()
-                .ok_or(anyhow!("invalid crop height (expected integer)"))? as u32;
-        let num_tiles_x = crop_width.div_ceil(tile_width) as u32;
-        let num_tiles_y = crop_height.div_ceil(tile_height) as u32;
+        let crop_width = get_u64(zoom, &[0, 1])? as u32;
+        let crop_height = get_u64(zoom, &[0, 0])? as u32;
+        let num_tiles_x = crop_width.div_ceil(tile_width);
+        let num_tiles_y = crop_height.div_ceil(tile_height);
         zoom_levels.push(ZoomLevel {
             crop_width,
             crop_height,
@@ -333,37 +268,27 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
         });
     }
 
-    let heading_tilt_roll_arr = meta
-        .get(1)
-        .ok_or(anyhow!("missing meta[1]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0]"))?
-        .get(5)
-        .ok_or(anyhow!("missing meta[1][0][5]"))?
-        .get(0)
-        .ok_or(anyhow!("missing meta[1][0][5][0]"))?
-        .get(1)
-        .ok_or(anyhow!("missing meta[1][0][5][0][1] (heading/tilt/roll)"))?
-        .as_array();
-    let (heading, tilt, roll) = if let Some(arr) = heading_tilt_roll_arr {
+    // Heading/Tilt/Roll
+    let heading_tilt_roll_arr = get_vec(&[1, 0, 5, 0, 1]);
+    let (heading, tilt, roll) = if let Ok(arr) = heading_tilt_roll_arr {
         if arr.len() >= 3 {
-            let inner = arr[2].as_array().ok_or(anyhow!(
-                "missing meta[1][0][5][0][1][2] (heading/tilt/roll array)"
-            ))?;
+            let inner = arr[2]
+                .as_array()
+                .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2]"))?;
             (
                 inner
                     .first()
-                    .ok_or(anyhow!("missing heading value"))?
+                    .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][0]"))?
                     .as_f64()
                     .unwrap_or(0.0),
                 inner
                     .get(1)
-                    .ok_or(anyhow!("missing tilt value"))?
+                    .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][1]"))?
                     .as_f64()
                     .unwrap_or(90.0),
                 inner
                     .get(2)
-                    .ok_or(anyhow!("missing roll value"))?
+                    .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][2]"))?
                     .as_f64()
                     .unwrap_or(0.0),
             )
@@ -428,6 +353,13 @@ async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
     Ok(img.to_rgb8())
 }
 
+/// Asynchrounously fetch and stitch together all the tiles for a given pano
+/// TODO: allow specifing the zoom level, for better perfs
+///
+/// # Errors
+/// This fail if any of the tiles fail to load
+///
+/// TODO: render blank squares instead of failing
 pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
     let zoom = meta.max_zoom.min(3);
     let mut buf = ImageBuffer::new(
@@ -511,7 +443,7 @@ fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
 
 /// Render an equirectangular projection to a 2d plane, with yaw and pitch.
 ///
-/// Thanks to https://blogs.codingballad.com/unwrapping-the-view-transforming-360-panoramas-into-intuitive-videos-with-python-6009bd5bca94
+/// Thanks to <https://blogs.codingballad.com/unwrapping-the-view-transforming-360-panoramas-into-intuitive-videos-with-python-6009bd5bca94>
 /// for this code
 fn pano_to_plane(
     pano: &RgbImage,
@@ -560,8 +492,12 @@ fn pano_to_plane(
     out
 }
 
-#[instrument(level = "debug")]
-pub async fn render_pano_from_metadata(
+/// Render a pano from it's metadata, fetching the tiles and rendering them into the output buffer
+///
+/// # Errors
+/// This can fail if we fail to fetch any of the tiles
+/// TODO: Render a blank space instead of failing
+pub fn render_pano_from_metadata(
     meta: &PanoMetadata,
     pano: &RgbImage,
     heading: f32,
@@ -591,4 +527,258 @@ pub async fn render_pano_from_metadata(
     info!("Load: {load_ms}ms, render: {time_ms}ms, total: {total_ms}ms");
 
     Ok(rendered)
+}
+
+/// Spawn the task responsible for fetching and rendering gsv panos.
+///
+/// # Errors
+/// This fails if we fail to spawn the task e.g. we fail to query the terminal size
+pub fn spawn_rendering_task(
+    mut pano_rx: tokio::sync::mpsc::Receiver<PanoRequest>,
+    evt_sender: tokio::sync::mpsc::UnboundedSender<Event>,
+) -> anyhow::Result<()> {
+    let picker = Picker::halfblocks(); // TODO: Support real image protocols but for now support for text on top of images is too flaky
+    let mut cur_size = crossterm::terminal::size()?;
+
+    tokio::task::spawn(async move {
+        let font_size = picker.font_size();
+
+        let mut meta_cache = None;
+
+        let mut equirect_cache = None;
+
+        let mut cur_heading = 0.0;
+
+        let mut cur_panoid = String::new();
+
+        while let Some(request) = pano_rx.recv().await {
+            let mut needs_render = false;
+            let mut needs_resize = false;
+
+            match request {
+                PanoRequest::Resize(width, height) => {
+                    if cur_size != (width, height) {
+                        needs_resize = true;
+                        cur_size = (width, height);
+                    }
+                }
+                PanoRequest::Render(panoid, hdg) => {
+                    cur_panoid = panoid;
+                    cur_heading = hdg;
+                    needs_render = true;
+                }
+            }
+
+            // Drain the queue, to avoid lagging out
+            while let Ok(req) = pano_rx.try_recv() {
+                match req {
+                    PanoRequest::Resize(width, height) => {
+                        if cur_size != (width, height) {
+                            needs_resize = true;
+                            cur_size = (width, height);
+                        }
+                    }
+                    PanoRequest::Render(panoid, hdg) => {
+                        cur_panoid = panoid;
+                        cur_heading = hdg;
+                        needs_render = true;
+                    }
+                }
+            }
+
+            // Now only do the necessary work
+            if needs_render {
+                // Fetch the current pano if needed
+
+                // Render the pano
+                let meta = match get_pano_metadata_from_id(&cur_panoid).await {
+                    Ok(ok) => ok,
+                    Err(err) => {
+                        warn!("Failed to render pano {cur_panoid}: {err:#?}");
+                        continue;
+                    }
+                };
+
+                let equirect = match load_equirect(&meta).await {
+                    Ok(ok) => ok,
+                    Err(err) => {
+                        warn!(
+                            "Failed to render pano {cur_panoid}, failed to fetch equirect: {err:#?}"
+                        );
+                        continue;
+                    }
+                };
+
+                meta_cache = Some(meta.clone());
+                equirect_cache = Some(equirect.clone());
+            }
+
+            if let Some(equirect) = &equirect_cache
+                && let Some(meta) = &meta_cache
+                && (needs_render || needs_resize)
+            {
+                let width = cur_size.0 * font_size.0;
+                let height = cur_size.1 * font_size.1;
+
+                let pano = match render_pano_from_metadata(
+                    meta,
+                    equirect,
+                    cur_heading as f32,
+                    width as u32,
+                    height as u32,
+                ) {
+                    Ok(pano) => pano,
+                    Err(err) => {
+                        warn!("Failed to render pano {cur_panoid}: {err:#?}");
+                        continue;
+                    }
+                };
+
+                let protocol = match picker.new_protocol(
+                    pano.into(),
+                    Rect::new(0, 0, width, height),
+                    Resize::Crop(None),
+                ) {
+                    Ok(proto) => proto,
+                    Err(err) => {
+                        warn!("Failed to create protocol for pano {cur_panoid}: {err:?}");
+                        continue;
+                    }
+                };
+
+                let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
+            }
+        }
+    });
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::{assert_eq, assert_ne};
+    use tokio::sync::mpsc::{channel, unbounded_channel};
+
+    #[test]
+    fn test_decode_panoid() {
+        // official-looking pano
+        let pano = decode_panoid("tXVQoL_JtBEBbV7LYKW_2A");
+        assert_eq!(pano.pano_type, PanoType::Official);
+        assert_eq!(pano.id, "tXVQoL_JtBEBbV7LYKW_2A");
+
+        // unofficial / malformed
+        let pano = decode_panoid("CAoSFkNJSE0wb2dLRUlDQWdJQ0U5SVBWR1E.");
+        assert_eq!(pano.pano_type, PanoType::Unofficial);
+        assert_eq!(pano.id, "CIHM0ogKEICAgICE9IPVGQ");
+    }
+
+    #[tokio::test]
+    #[ignore = "uses the network"]
+    async fn test_pano_fetch() {
+        let meta = get_pano_metadata_from_id("tXVQoL_JtBEBbV7LYKW_2A")
+            .await
+            .unwrap();
+        let _ = load_equirect(&meta).await;
+
+        let meta = get_pano_metadata_from_id("CAoSFkNJSE0wb2dLRUlDQWdJQ0U5SVBWR1E.")
+            .await
+            .unwrap();
+        let _ = load_equirect(&meta).await;
+    }
+
+    #[test]
+    fn test_map_to_sphere() {
+        let (theta, phi) = map_to_sphere(1.0, 2.0, 3.0, 0.0, 0.0);
+
+        assert!(theta.is_finite());
+        assert!(phi.is_finite());
+        assert!((0.0..=std::f32::consts::PI).contains(&theta));
+
+        let (theta, _) = map_to_sphere(0.0, 0.0, 1.0, 0.0, 0.0);
+
+        // should point straight ahead → near 0
+        assert!(theta.abs() < 1e-5);
+
+        let (_, phi1) = map_to_sphere(1.0, 0.0, 1.0, 0.0, 0.0);
+        let (_, phi2) = map_to_sphere(1.0, 0.0, 1.0, 1.0, 0.0);
+
+        assert_ne!(phi1, phi2);
+
+        for i in 0..1000 {
+            let x = (i as f32).sin();
+            let y = (i as f32).cos();
+            let z = 1.0;
+
+            let (theta, phi) = map_to_sphere(x, y, z, 0.3, 0.7);
+
+            assert!(theta.is_finite());
+            assert!(phi.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_render_pano_from_metadata_basic() {
+        use image::RgbImage;
+
+        // fake 2x2 pano image
+        let mut pano = RgbImage::new(2, 2);
+        pano.put_pixel(0, 0, image::Rgb([255, 0, 0]));
+        pano.put_pixel(1, 0, image::Rgb([0, 255, 0]));
+        pano.put_pixel(0, 1, image::Rgb([0, 0, 255]));
+        pano.put_pixel(1, 1, image::Rgb([255, 255, 0]));
+
+        // fake metadata
+        let meta = super::PanoMetadata {
+            pano: super::Pano {
+                pano_type: super::PanoType::Official,
+                id: "fake".to_string(),
+            },
+            lat: 0.0,
+            lng: 0.0,
+            image_width: 2,
+            image_height: 2,
+            tile_width: 2,
+            tile_height: 2,
+            max_zoom: 0,
+            zoom_levels: vec![super::ZoomLevel {
+                crop_width: 2,
+                crop_height: 2,
+                num_tiles_x: 1,
+                num_tiles_y: 1,
+            }],
+            heading: 0.0,
+            tilt: 0.0,
+            roll: 0.0,
+        };
+
+        // call render
+        let rendered = super::render_pano_from_metadata(&meta, &pano, 0.0, 4, 4).unwrap();
+
+        assert_eq!(rendered.width(), 4);
+        assert_eq!(rendered.height(), 4);
+    }
+
+    #[tokio::test]
+    #[ignore = "Uses the network"]
+    async fn test_rendering_task() {
+        let (pano_tx, pano_rx) = channel(10); // Who cares?
+        let (evt_tx, mut evt_rx) = unbounded_channel();
+
+        spawn_rendering_task(pano_rx, evt_tx).unwrap();
+
+        pano_tx
+            .send(PanoRequest::Render(
+                "tXVQoL_JtBEBbV7LYKW_2A".to_string(),
+                0.0,
+            ))
+            .await
+            .unwrap();
+
+        let timeout = std::time::Duration::from_secs(30);
+
+        tokio::time::timeout(timeout, evt_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }
