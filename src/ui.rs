@@ -192,20 +192,47 @@ impl App {
         if let Some(end_time) = self.vote_ends
             && let Some((_, heading)) = &self.current_pano
         {
-            let secs_until = end_time.signed_duration_since(Utc::now()).num_seconds();
+            let secs_until = end_time.saturating_sub(Utc::now().timestamp_millis() as u64) / 1000;
             let picking_in = if secs_until > 0 {
-                format!("Picking option in {secs_until} seconds...")
+                format!(
+                    "Picking {}in {secs_until} seconds...",
+                    if area.width >= WIDE_BREAK {
+                        "option "
+                    } else {
+                        ""
+                    }
+                )
             } else {
-                "Picking option...".to_string()
+                format!(
+                    "Picking{}...",
+                    if area.width >= WIDE_BREAK {
+                        " option"
+                    } else {
+                        ""
+                    }
+                )
             };
-            let content_width = 21;
+            let init_text_height = if secs_until > 0 { 2 } else { 1 };
+
+            let mut vote_counts: Vec<_> = self.vote_counts.iter().collect();
+            vote_counts.sort_by_key(|(idx, count)| Reverse((**count, **idx)));
+            vote_counts.truncate(4);
+
+            let total = vote_counts
+                .iter()
+                .map(|(_, count)| **count)
+                .sum::<u16>()
+                .max(1);
+
+            let content_width = if area.width >= WIDE_BREAK { 21 } else { 18 };
             let content_rect = Rect::new(
                 area.width.saturating_sub(content_width),
                 4,
                 content_width,
-                18,
+                init_text_height + 1 + 2 + vote_counts.len() as u16 * 2,
             )
             .clamp(area);
+
             let block = Block::bordered()
                 .border_type(BorderType::Rounded)
                 .bg(Color::Rgb(255, 255, 255))
@@ -220,17 +247,9 @@ impl App {
                 .wrap(Wrap { trim: false })
                 .render(inner_rect, buf);
 
-            let mut vote_counts: Vec<_> = self.vote_counts.iter().collect();
-            vote_counts.sort_by_key(|(idx, count)| Reverse((**count, **idx)));
-            let total = vote_counts
-                .iter()
-                .map(|(_, count)| **count)
-                .sum::<u16>()
-                .max(1);
+            let counts_rect = inner_rect.offset(Offset::new(0, init_text_height as i32 + 1));
 
-            let counts_rect = inner_rect.offset(Offset::new(0, 3));
-
-            for (offset, (idx, count)) in vote_counts.iter().take(4).enumerate() {
+            for (offset, (idx, count)) in vote_counts.iter().enumerate() {
                 let mut emoji = match idx {
                     -1 => "⏩",
                     -2 => "📢",
@@ -238,7 +257,7 @@ impl App {
                         let aro_heading = self.vote_options[**idx as usize].heading;
                         let heading_diff = aro_heading - heading;
                         match heading_diff.round() as i16 {
-                            -102..-67 => "⬅️", // TODO: Better emoji support
+                            -102..-67 => "⬅️",
                             -67..-22 => "↖️",
                             -22..23 => "⬆️",
                             23..68 => "↗️",
@@ -466,7 +485,7 @@ mod tests {
         let (tx, _) = tokio::sync::mpsc::channel(100);
         let mut app = App::new(EventHandler::new_deterministic(), tx);
 
-        app.vote_ends = Some(Utc::now() + chrono::Duration::seconds(7));
+        app.vote_ends = Some(Utc::now().timestamp_millis() as u64 + 7000);
         app.current_pano = Some((String::new(), 90.0));
         app.vote_options = vec![
             crate::roadtrip::VoteOption {
@@ -483,7 +502,7 @@ mod tests {
         // Seek five, forward, 10 and right 15
         app.vote_counts = HashMap::from([(-1, 5), (0, 10), (1, 15)]);
 
-        let area = Rect::new(0, 0, 30, 20);
+        let area = Rect::new(0, 0, 30, 13);
         let mut buf = Buffer::empty(area);
         app.render_vote_counts(area, &mut buf);
 
@@ -492,24 +511,17 @@ mod tests {
             &Buffer::with_lines(vec![
                 "                              ",
                 "                              ",
-                "         ╭───────────────────╮",
-                "         │Picking option in 6│",
-                "         │seconds...         │",
-                "         │                   │",
-                "         │➡️ 15 votes     50%│", // hidden by multi-width symbols: [(11, " ")]
-                "         │   ━━━━━━━━        │",
-                "         │⬆️ 10 votes     33%│", // hidden by multi-width symbols: [(11, " ")]
-                "         │   ━━━━━           │",
-                "         │⏩ 5 votes      17%│",
-                "         │   ━━              │",
-                "         │                   │",
-                "         │                   │",
-                "         │                   │",
-                "         │                   │",
-                "         │                   │",
-                "         │                   │",
-                "         │                   │",
-                "         ╰───────────────────╯",
+                "            ╭────────────────╮",
+                "            │Picking in 7    │",
+                "            │seconds...      │",
+                "            │                │",
+                "            │➡️ 15 votes  50%│", // hidden by multi-width symbols: [(14, " ")]
+                "            │   ━━━━━━       │",
+                "            │⬆️ 10 votes  33%│", // hidden by multi-width symbols: [(14, " ")]
+                "            │   ━━━━         │",
+                "            │⏩ 5 votes   17%│", // hidden by multi-width symbols: [(14, " ")]
+                "            │   ━━           │",
+                "            ╰────────────────╯",
             ]),
         );
     }

@@ -52,7 +52,7 @@ pub struct App {
     pub vote_counts: HashMap<i8, u16>,
 
     /// When the voting period ends
-    pub vote_ends: Option<DateTime<Utc>>,
+    pub vote_ends: Option<u64>,
 }
 
 impl App {
@@ -259,7 +259,7 @@ mod tests {
     #[tokio::test]
     async fn test_app_roadtrip_evt() {
         let (mut app, sender, mut pano_rx) = new_test_app();
-        let end_time = Utc::now() + chrono::Duration::seconds(7);
+        let end_time = Utc::now().timestamp() as u64 + 7;
         let event = Event::RoadTrip(RoadtripEvent::WS(WSEvent {
             pano: "tXVQoL_JtBEBbV7LYKW_2A".to_string(),
             heading: 90.0,

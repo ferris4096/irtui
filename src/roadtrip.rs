@@ -34,8 +34,8 @@ pub struct WSEvent {
     pub total_users: u16,
     pub vote_counts: HashMap<i8, u16>,
     pub options: Vec<VoteOption>,
-    #[serde(deserialize_with = "deserialize_datetime_utc_from_milliseconds")]
-    pub end_time: DateTime<Utc>,
+    // #[serde(deserialize_with = "deserialize_datetime_utc_from_milliseconds")]
+    pub end_time: u64,
 }
 
 /// Our current location, as per the websocket
@@ -106,7 +106,7 @@ fn test_ws_event_deserialization() {
     assert_eq!(event.total_users, 123);
     assert_eq!(event.vote_counts.get(&1), Some(&10));
     assert_eq!(event.options.len(), 1);
-    assert_eq!(event.end_time.timestamp(), 1);
+    assert_eq!(event.end_time, 1000);
 }
 
 #[cfg(test)]
