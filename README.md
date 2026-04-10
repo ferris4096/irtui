@@ -8,6 +8,8 @@ A terminal user interface for the [Neal.fun Internet Roadtrip](https://neal.fun/
 
 ![IRTUI Demo](/assets/demo/demo.gif)
 
+Actual results may vary, based on truecolor and emoji support of your terminal emulator. I used the VsCode default terminal on macOS Tahoe.
+
 Sorry for the interstate 😭, I hate interstates too, btw, AIM for life!!
 
 ## Getting Started
@@ -64,11 +66,13 @@ If you ever need to see the logs, just set `IRTUI_LOG_LEVEL` to one of `TRACE`, 
 
 ## Features/Wishlist
 
+- [ ] Support honking
 - [ ] Add chat box 
 - [ ] Support voting
-- [ ] Display minimap
+- [ ] Display the odometer
+- [ ] Display the minimap
 - [ ] Display and play the radio
-- [ ] Add a link to the main site
+- [ ] Add a link to the main site and to the discord
 
 ## License
 
