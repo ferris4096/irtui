@@ -98,6 +98,11 @@ pub struct EventHandler {
 
 impl EventHandler {
     /// Constructs a new instance of [`EventHandler`] and spawns a new threads to handle events.
+    ///
+    /// # Panics
+    /// The task it spawns might panic if connecting to the websocket fails
+    ///
+    /// TODO: ideally remove this task to somewhere else, making this function more pure
     #[must_use]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded_channel(); // Random, may change

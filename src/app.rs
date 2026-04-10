@@ -6,7 +6,6 @@ use crate::{
     roadtrip::{Location, RoadtripEvent, VoteOption},
 };
 
-use chrono::{DateTime, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, prelude::*};
 use ratatui_image::protocol::Protocol;
@@ -56,6 +55,10 @@ pub struct App {
 }
 
 impl App {
+    /// Return a default application which spawns the necessary hanlders and tasks
+    ///
+    /// # Errors
+    /// This fails if setting up one of the tasks fails
     pub fn with_default_term() -> anyhow::Result<Self> {
         // Spawn the default pano rendering task
         let evt_handler = EventHandler::new();
@@ -87,6 +90,9 @@ impl App {
     }
 
     /// Run the application's main loop.
+    ///
+    /// # Errors
+    /// This fails if drawing to the terminal failed or if handling events failed
     pub async fn run<B: Backend + Send + 'static>(
         mut self,
         mut terminal: Terminal<B>,
@@ -102,6 +108,10 @@ impl App {
         Ok(())
     }
 
+    /// Handle incoming events, dispatching them to more specific handlers until it reaches a `Tick`
+    ///
+    /// # Errors
+    /// This fails if the queue fails, probably impossible, but let's stay safe.
     pub async fn handle_events(&mut self) -> anyhow::Result<()> {
         let mut requested_size = None;
         while let Some(event) = self.events.next().await {
@@ -112,7 +122,7 @@ impl App {
                     crossterm::event::Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_event(key_event)?;
+                        self.handle_key_event(key_event);
                     }
                     crossterm::event::Event::Resize(width, height) => {
                         requested_size = Some((width, height));
@@ -142,6 +152,10 @@ impl App {
     }
 
     /// Handle a roadtrip event
+    ///
+    /// # Errors
+    /// Fails if the queue fails, which might turn out to be impossible, but we still return a `Result` just
+    /// to be safe.
     pub async fn handle_roadtrip_event(
         &mut self,
         roadtrip_event: RoadtripEvent,
@@ -170,7 +184,7 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    pub fn handle_key_event(&mut self, key_event: KeyEvent) -> anyhow::Result<()> {
+    pub fn handle_key_event(&mut self, key_event: KeyEvent) {
         debug!("Recved key evt: {key_event:?}");
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
@@ -180,7 +194,6 @@ impl App {
             // Other handlers you could add here.
             _ => {}
         }
-        Ok(())
     }
 
     /// Set running to false to quit the application.
@@ -194,6 +207,7 @@ mod tests {
     use crate::roadtrip::WSEvent;
 
     use super::*;
+    use chrono::Utc;
     use pretty_assertions::assert_eq;
     use tokio::sync::mpsc::{Receiver, UnboundedSender};
 

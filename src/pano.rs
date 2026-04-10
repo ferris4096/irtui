@@ -159,9 +159,9 @@ fn decode_panoid(panoid: &str) -> Pano {
 /// Returns `None` on any network/error condition.
 ///
 /// Stolen from Mikarific/LookoutTheWindow
-/// 
+///
 /// # Errors
-/// 
+///
 /// This fails if the network fails, or if we fail to parse the response json for some reason
 #[instrument(level = "debug")]
 pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMetadata> {
@@ -190,36 +190,48 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
     let get_f64 = |path: &[usize]| -> anyhow::Result<f64> {
         let mut val = &meta;
         for &idx in path {
-            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
         }
-        val.as_f64().ok_or_else(|| anyhow!("expected f64 at path: {path:?}"))
+        val.as_f64()
+            .ok_or_else(|| anyhow!("expected f64 at path: {path:?}"))
     };
 
     // Helper to extract nested u64
     let get_u64 = |value: &Value, path: &[usize]| -> anyhow::Result<u64> {
         let mut val = value;
         for &idx in path {
-            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
         }
-        val.as_u64().ok_or_else(|| anyhow!("expected u64 at path: {path:?}"))
+        val.as_u64()
+            .ok_or_else(|| anyhow!("expected u64 at path: {path:?}"))
     };
 
     // Helper to extract nested str
     let get_str = |path: &[usize]| -> anyhow::Result<&str> {
         let mut val = &meta;
         for &idx in path {
-            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
         }
-        val.as_str().ok_or_else(|| anyhow!("expected str at path: {path:?}"))
+        val.as_str()
+            .ok_or_else(|| anyhow!("expected str at path: {path:?}"))
     };
 
     // Helper to extract nested vec
     let get_vec = |path: &[usize]| -> anyhow::Result<&Vec<Value>> {
         let mut val = &meta;
         for &idx in path {
-            val = val.get(idx).ok_or_else(|| anyhow!("missing path: {path:?}"))?;
+            val = val
+                .get(idx)
+                .ok_or_else(|| anyhow!("missing path: {path:?}"))?;
         }
-        val.as_array().ok_or_else(|| anyhow!("expected array at path: {path:?}"))
+        val.as_array()
+            .ok_or_else(|| anyhow!("expected array at path: {path:?}"))
     };
 
     // Extract pano info
@@ -239,7 +251,7 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
     let tile_height = get_u64(&meta, &[1, 0, 2, 3, 1, 0])? as u32;
 
     // Zoom levels
-    let zoom_array = get_vec(&[1,0,2,3,0])?;
+    let zoom_array = get_vec(&[1, 0, 2, 3, 0])?;
 
     let max_zoom = zoom_array.len().saturating_sub(1);
     let mut zoom_levels = Vec::new();
@@ -248,21 +260,59 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
         let crop_height = get_u64(zoom, &[0, 0])? as u32;
         let num_tiles_x = crop_width.div_ceil(tile_width);
         let num_tiles_y = crop_height.div_ceil(tile_height);
-        zoom_levels.push(ZoomLevel { crop_width, crop_height, num_tiles_x, num_tiles_y });
+        zoom_levels.push(ZoomLevel {
+            crop_width,
+            crop_height,
+            num_tiles_x,
+            num_tiles_y,
+        });
     }
 
     // Heading/Tilt/Roll
-    let heading_tilt_roll_arr = get_vec(&[1,0,5,0,1]);
+    let heading_tilt_roll_arr = get_vec(&[1, 0, 5, 0, 1]);
     let (heading, tilt, roll) = if let Ok(arr) = heading_tilt_roll_arr {
         if arr.len() >= 3 {
-            let inner = arr[2].as_array().ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2]"))?;
-            (inner.first().ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][0]"))?.as_f64().unwrap_or(0.0),
-             inner.get(1).ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][1]"))?.as_f64().unwrap_or(90.0),
-             inner.get(2).ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][2]"))?.as_f64().unwrap_or(0.0))
-        } else { (0.0, 90.0, 0.0) }
-    } else { (0.0, 90.0, 0.0) };
+            let inner = arr[2]
+                .as_array()
+                .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2]"))?;
+            (
+                inner
+                    .first()
+                    .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][0]"))?
+                    .as_f64()
+                    .unwrap_or(0.0),
+                inner
+                    .get(1)
+                    .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][1]"))?
+                    .as_f64()
+                    .unwrap_or(90.0),
+                inner
+                    .get(2)
+                    .ok_or(anyhow!("Failed to get meta[1][0][5][0][1][2][2]"))?
+                    .as_f64()
+                    .unwrap_or(0.0),
+            )
+        } else {
+            (0.0, 90.0, 0.0)
+        }
+    } else {
+        (0.0, 90.0, 0.0)
+    };
 
-    Ok(PanoMetadata { pano, lat, lng, image_width, image_height, tile_width, tile_height, max_zoom, zoom_levels, heading, tilt, roll })
+    Ok(PanoMetadata {
+        pano,
+        lat,
+        lng,
+        image_width,
+        image_height,
+        tile_width,
+        tile_height,
+        max_zoom,
+        zoom_levels,
+        heading,
+        tilt,
+        roll,
+    })
 }
 
 async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
@@ -725,8 +775,10 @@ mod tests {
             .unwrap();
 
         let timeout = std::time::Duration::from_secs(30);
-        if let Ok(Some(Event::App(AppEvent::NewFrame(_)))) =
-            tokio::time::timeout(timeout, evt_rx.recv()).await
-        {}
+
+        tokio::time::timeout(timeout, evt_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
     }
 }

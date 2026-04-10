@@ -187,6 +187,8 @@ impl App {
     }
 
     /// Render the vote counts box, below the drivers count
+    /// TODO: make this code cleaner, and shorter, for now were gonna just:
+    #[allow(clippy::too_many_lines)]
     fn render_vote_counts(&self, area: Rect, buf: &mut Buffer) {
         // Render the vote counts box
         if let Some(end_time) = self.vote_ends
