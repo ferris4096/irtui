@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, prelude::*};
 use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument, warn};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PanoRequest {
@@ -59,6 +59,7 @@ impl App {
     ///
     /// # Errors
     /// This fails if setting up one of the tasks fails
+    #[instrument(skip_all, name = "app.init")]
     pub fn with_default_term() -> anyhow::Result<Self> {
         // Spawn the default pano rendering task
         let evt_handler = EventHandler::new();
@@ -66,9 +67,10 @@ impl App {
 
         let evt_sender = evt_handler.sender.clone(); // So that rendering task can report back
 
-        debug!("Spawning pano rendering task");
+        info!("Spawning pano rendering task");
         spawn_rendering_task(pano_rx, evt_sender)?;
 
+        info!("App initialized successfully");
         Ok(App::new(evt_handler, pano_tx))
     }
 
@@ -93,6 +95,7 @@ impl App {
     ///
     /// # Errors
     /// This fails if drawing to the terminal failed or if handling events failed
+    #[instrument(skip_all, name = "app.run")]
     pub async fn run<B: Backend + Send + 'static>(
         mut self,
         mut terminal: Terminal<B>,
@@ -100,11 +103,12 @@ impl App {
     where
         B::Error: Send + Sync,
     {
+        info!("Starting app main loop");
         while self.running {
-            debug!("Rendering");
             terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
             self.handle_events().await?;
         }
+        info!("App main loop ended");
         Ok(())
     }
 
@@ -156,13 +160,19 @@ impl App {
     /// # Errors
     /// Fails if the queue fails, which might turn out to be impossible, but we still return a `Result` just
     /// to be safe.
+    #[instrument(skip_all, name = "app.roadtrip_event")]
     pub async fn handle_roadtrip_event(
         &mut self,
         roadtrip_event: RoadtripEvent,
     ) -> anyhow::Result<()> {
-        debug!("Recved roadtrip event {roadtrip_event:?}");
         match roadtrip_event {
             RoadtripEvent::WS(evt) => {
+                info!(
+                    users_online = evt.total_users,
+                    location = ?evt.location,
+                    "Received roadtrip update"
+                );
+
                 self.users_online = evt.total_users;
                 let panoid = evt.pano.clone();
 
@@ -170,13 +180,20 @@ impl App {
                 self.vote_options = evt.options;
                 self.vote_ends = Some(evt.end_time);
 
-                if self.current_pano != Some((evt.pano, evt.heading)) {
+                if self.current_pano != Some((evt.pano.clone(), evt.heading)) {
                     // Update current pano and trigger a render request.
+                    info!(
+                        panoid = %panoid,
+                        heading = evt.heading,
+                        "New panorama"
+                    );
                     self.current_pano = Some((panoid.clone(), evt.heading));
                     self.location = Some(evt.location); // Imitate the website behavior
                     self.pano_tx
                         .send(PanoRequest::Render(panoid, evt.heading))
                         .await?;
+                } else {
+                    debug!("Panorama unchanged, skipping render");
                 }
             }
         }
@@ -184,15 +201,19 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
+    #[instrument(skip_all, name = "app.key_event")]
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
-        debug!("Recved key evt: {key_event:?}");
         match key_event.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                info!("Quit requested via keyboard");
+                self.events.send(AppEvent::Quit);
+            }
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
+                info!("Quit requested via Ctrl+C");
                 self.events.send(AppEvent::Quit);
             }
             // Other handlers you could add here.
-            _ => {}
+            _ => debug!(code = ?key_event.code, "Unhandled key event"),
         }
     }
 

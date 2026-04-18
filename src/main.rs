@@ -12,7 +12,7 @@ use std::{
     str::FromStr,
 };
 
-use tracing::{Level, info};
+use tracing::{Level, error, info};
 
 use crate::app::App;
 
@@ -46,15 +46,24 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(log_level)
         .with_ansi(false)
         .with_writer(log_file)
+        .with_target(true)
+        .compact()
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     info!("Initializing terminal");
     let terminal = ratatui::init();
-    info!("Lauching app");
-    let result = App::with_default_term()?.run(terminal).await;
-    info!("Exiting...");
+    info!("Launching app");
+
+    let result = App::with_default_term()
+        .inspect_err(|err| {
+            error!(error = ?err, "Failed to initialize app");
+        })?
+        .run(terminal)
+        .await;
+
+    info!("Exiting gracefully");
     ratatui::restore();
     result
 }

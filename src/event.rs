@@ -7,7 +7,7 @@ use tokio::{
     sync::mpsc::{self, UnboundedSender},
     task,
 };
-use tracing::{debug, warn};
+use tracing::{debug, warn, info, instrument, error};
 
 use crate::roadtrip::{self, RoadtripEvent};
 
@@ -56,6 +56,7 @@ impl Debug for AppEvent {
 }
 
 /// Spawn a task to forward crossterm and tick events
+#[instrument(skip_all, name = "event.crossterm_handler")]
 fn handle_crossterm_and_tick_evts(
     sender: UnboundedSender<Event>,
     mut crossterm_stream: impl Stream<Item = Result<CrosstermEvent, std::io::Error>>
@@ -64,6 +65,7 @@ fn handle_crossterm_and_tick_evts(
     + 'static,
 ) {
     task::spawn(async move {
+        info!("Crossterm event handler started");
         let tick_rate = Duration::from_secs_f64(1.0 / FPS);
         let mut tick = tokio::time::interval(tick_rate);
         loop {
@@ -71,14 +73,14 @@ fn handle_crossterm_and_tick_evts(
             let crossterm_event = crossterm_stream.next().fuse();
             tokio::select! {
               () = sender.closed() => {
+                info!("Event sender closed, stopping crossterm handler");
                 break;
               }
               _ = tick_delay => {
-                debug!("Sending tick event");
                 let _ = sender.send(Event::Tick);
               }
               Some(Ok(evt)) = crossterm_event => {
-                debug!("Sending crossterm event: {evt:?}");
+                debug!("Forwarding crossterm event: {evt:?}");
                 let _ = sender.send(Event::Crossterm(evt));
               }
             };
@@ -104,8 +106,11 @@ impl EventHandler {
     ///
     /// TODO: ideally remove this task to somewhere else, making this function more pure
     #[must_use]
+    #[instrument(skip_all, name = "event.handler_init")]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded_channel(); // Random, may change
+
+        info!("Initializing event handler");
 
         // Spawn a task to forward crossterm and tick events
         handle_crossterm_and_tick_evts(sender.clone(), EventStream::new());
@@ -114,20 +119,41 @@ impl EventHandler {
         {
             let sender = sender.clone();
             task::spawn(async move {
-                let mut backend = roadtrip::WSBackend::new()
-                    .await
-                    .expect("Failed to connect to roadtrip backend");
-                while let Some(evt) = backend.next().await {
-                    match evt {
-                        Ok(evt) => {
-                            if sender
-                                .send(Event::RoadTrip(RoadtripEvent::WS(evt)))
-                                .is_err()
-                            {
-                                break;
+                info!("Roadtrip event handler connecting to websocket");
+                match roadtrip::WSBackend::new().await {
+                    Ok(mut backend) => {
+                        info!("Connected to roadtrip backend");
+                        let mut consecutive_errors = 0;
+                        while let Some(evt) = backend.next().await {
+                            match evt {
+                                Ok(evt) => {
+                                    consecutive_errors = 0;
+                                    if sender
+                                        .send(Event::RoadTrip(RoadtripEvent::WS(evt)))
+                                        .is_err()
+                                    {
+                                        warn!("Failed to send roadtrip event to channel");
+                                        break;
+                                    }
+                                }
+                                Err(err) => {
+                                    consecutive_errors += 1;
+                                    warn!(
+                                        error = %err,
+                                        attempt = consecutive_errors,
+                                        "Failed to receive from IRT WS"
+                                    );
+                                    if consecutive_errors > 5 {
+                                        error!("Too many consecutive errors, stopping roadtrip handler");
+                                        break;
+                                    }
+                                }
                             }
                         }
-                        Err(err) => warn!("Failed to recv from IRT WS: {err:#?}"),
+                        warn!("Roadtrip event handler exited");
+                    }
+                    Err(err) => {
+                        error!(error = %err, "Failed to connect to roadtrip backend");
                     }
                 }
             });

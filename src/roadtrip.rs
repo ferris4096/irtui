@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_aux::prelude::*;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
+use tracing::{info, debug, error, instrument};
 
 /// Events emitted by the IRT backend
 #[derive(Clone, Debug)]
@@ -57,21 +58,49 @@ impl WSBackend {
     ///
     /// ## Errors
     /// This fails if we can't connect to the websocket for some reason
+    #[instrument(name = "roadtrip.connect")]
     pub async fn new() -> Result<Self, anyhow::Error> {
+        info!("Connecting to IRT websocket");
         let (socket, _response) =
             connect_async("wss://internet-roadtrip-listen-eqzms.ondigitalocean.app/")
                 .await
                 .context("Failed to connect to websocket")?;
 
+        info!("Connected to IRT websocket successfully");
         Ok(Self { socket })
     }
 }
 
 impl WSBackend {
+    #[instrument(skip(self), name = "roadtrip.next")]
     pub async fn next(&mut self) -> Option<anyhow::Result<WSEvent>> {
         let maybe_message = self.socket.next().await?;
-        let result =
-            || -> anyhow::Result<WSEvent> { Ok(serde_json::from_str(maybe_message?.to_text()?)?) };
+        let result = || -> anyhow::Result<WSEvent> {
+            match maybe_message?.to_text() {
+                Ok(text) => {
+                    debug!("Received websocket message");
+                    match serde_json::from_str::<WSEvent>(text) {
+                        Ok(evt) => {
+                            info!(
+                                pano = %evt.pano,
+                                location = ?evt.location,
+                                users = evt.total_users,
+                                "Received roadtrip event"
+                            );
+                            Ok(evt)
+                        }
+                        Err(e) => {
+                            error!(error = %e, "Failed to parse websocket message as WSEvent");
+                            Err(e.into())
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to convert message to text");
+                    Err(e.into())
+                }
+            }
+        };
 
         Some(result())
     }

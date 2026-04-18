@@ -8,7 +8,7 @@ use ratatui_image::{Resize, picker::Picker};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument, warn, error};
 
 use crate::{
     app::PanoRequest,
@@ -520,11 +520,19 @@ pub fn render_pano_from_metadata(
         -meta.roll as f32,
     );
 
-    let time_ms = before_render.elapsed().as_secs_f64() * 1000.0;
+    let render_ms = before_render.elapsed().as_secs_f64() * 1000.0;
 
     let total_ms = before_load.elapsed().as_secs_f64() * 1000.0;
 
-    info!("Load: {load_ms}ms, render: {time_ms}ms, total: {total_ms}ms");
+    debug!(
+        load_ms,
+        render_ms,
+        total_ms,
+        out_w,
+        out_h,
+        heading,
+        "Rendered panorama"
+    );
 
     Ok(rendered)
 }
@@ -533,12 +541,14 @@ pub fn render_pano_from_metadata(
 ///
 /// # Errors
 /// This fails if we fail to spawn the task e.g. we fail to query the terminal size
+#[instrument(skip_all, name = "pano.renderer")]
 pub fn spawn_rendering_task(
     mut pano_rx: tokio::sync::mpsc::Receiver<PanoRequest>,
     evt_sender: tokio::sync::mpsc::UnboundedSender<Event>,
 ) -> anyhow::Result<()> {
     let picker = Picker::halfblocks(); // TODO: Support real image protocols but for now support for text on top of images is too flaky
     let mut cur_size = crossterm::terminal::size()?;
+    info!(width = cur_size.0, height = cur_size.1, "Panorama renderer initialized");
 
     tokio::task::spawn(async move {
         let font_size = picker.font_size();
@@ -560,9 +570,11 @@ pub fn spawn_rendering_task(
                     if cur_size != (width, height) {
                         needs_resize = true;
                         cur_size = (width, height);
+                        info!(width, height, "Terminal resized");
                     }
                 }
                 PanoRequest::Render(panoid, hdg) => {
+                    debug!(panoid = %panoid, heading = hdg, "Render request");
                     cur_panoid = panoid;
                     cur_heading = hdg;
                     needs_render = true;
@@ -589,21 +601,45 @@ pub fn spawn_rendering_task(
             // Now only do the necessary work
             if needs_render {
                 // Fetch the current pano if needed
+                info!(panoid = %cur_panoid, "Fetching panorama metadata");
 
                 // Render the pano
                 let meta = match get_pano_metadata_from_id(&cur_panoid).await {
-                    Ok(ok) => ok,
+                    Ok(ok) => {
+                        info!(
+                            panoid = %cur_panoid,
+                            image_width = ok.image_width,
+                            image_height = ok.image_height,
+                            max_zoom = ok.max_zoom,
+                            "Fetched panorama metadata"
+                        );
+                        ok
+                    }
                     Err(err) => {
-                        warn!("Failed to render pano {cur_panoid}: {err:#?}");
+                        error!(
+                            error = %err,
+                            panoid = %cur_panoid,
+                            "Failed to fetch panorama metadata"
+                        );
                         continue;
                     }
                 };
 
                 let equirect = match load_equirect(&meta).await {
-                    Ok(ok) => ok,
+                    Ok(ok) => {
+                        info!(
+                            panoid = %cur_panoid,
+                            width = ok.width(),
+                            height = ok.height(),
+                            "Loaded equirectangular image"
+                        );
+                        ok
+                    }
                     Err(err) => {
-                        warn!(
-                            "Failed to render pano {cur_panoid}, failed to fetch equirect: {err:#?}"
+                        error!(
+                            error = %err,
+                            panoid = %cur_panoid,
+                            "Failed to load equirectangular image"
                         );
                         continue;
                     }
@@ -627,9 +663,12 @@ pub fn spawn_rendering_task(
                     width as u32,
                     height as u32,
                 ) {
-                    Ok(pano) => pano,
+                    Ok(pano) => {
+                        debug!("Rendered panorama for display");
+                        pano
+                    }
                     Err(err) => {
-                        warn!("Failed to render pano {cur_panoid}: {err:#?}");
+                        error!(error = %err, panoid = %cur_panoid, "Failed to render panorama");
                         continue;
                     }
                 };
@@ -641,11 +680,16 @@ pub fn spawn_rendering_task(
                 ) {
                     Ok(proto) => proto,
                     Err(err) => {
-                        warn!("Failed to create protocol for pano {cur_panoid}: {err:?}");
+                        error!(
+                            error = ?err,
+                            panoid = %cur_panoid,
+                            "Failed to create display protocol"
+                        );
                         continue;
                     }
                 };
 
+                info!(panoid = %cur_panoid, "Displaying new frame");
                 let _ = evt_sender.send(Event::App(AppEvent::NewFrame(protocol)));
             }
         }
