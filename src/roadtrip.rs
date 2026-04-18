@@ -41,7 +41,7 @@ pub struct WSEvent {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Location {
     pub road: String,
-    pub neighborhood: String,
+    pub neighborhood: Option<String>,
     pub state: String,
     pub county: String,
     pub country: String,
@@ -120,5 +120,7 @@ mod tests {
 
         let event = timeout(Duration::from_secs(5), backend.next()).await;
         assert!(event.is_ok(), "Websocket did not respond in time");
+
+        backend.next().await.unwrap().unwrap();
     }
 }

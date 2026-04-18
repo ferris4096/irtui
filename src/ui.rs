@@ -82,7 +82,7 @@ impl App {
     /// Render the the town and street boxes, approximating the website layout
     fn render_location(&self, area: Rect, buf: &mut Buffer) {
         if let Some(location) = &self.location {
-            let content = format!("{}, {}", location.neighborhood, location.country);
+            let content = format!("{}, {}", location.neighborhood.as_ref().unwrap_or(&location.county), location.country);
 
             // Compute the properties of the town box
             let padding = if area.width >= WIDE_BREAK {
@@ -415,7 +415,7 @@ mod tests {
         let mut app = App::new(EventHandler::new_deterministic(), tx);
 
         app.location = Some(Location {
-            neighborhood: "Town of East Hampton".to_string(), // Wide text for testing
+            neighborhood: Some("Town of East Hampton".to_string()), // Wide text for testing
             country: "United States of America".to_string(),
             road: "Main Street".to_string(),
             county: "Suffolk County".to_string(), // Random
@@ -451,8 +451,8 @@ mod tests {
 
         app.location = Some(Location {
             neighborhood:
-                "Town of East Hampton, East Historical Village District, Bla bla bla bla bla bla"
-                    .to_string(), // Wide text for testing
+                Some("Town of East Hampton, East Historical Village District, Bla bla bla bla bla bla"
+                    .to_string()), // Wide text for testing
             country: "United States of America".to_string(),
             road: "Very very loooong street street street street name name".to_string(),
             county: "Suffolk County".to_string(), // Random
