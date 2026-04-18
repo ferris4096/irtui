@@ -59,10 +59,11 @@ irtui
 
 ### Logging
 
-If you ever need to see the logs, just set `IRTUI_LOG_LEVEL` to one of `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, which correspond to the tracing log levels, listed from most to least verbose. Logs will be outputted in your system's default log directory:
-- MacOS: `~/Library/Logs/irtui.log`
-- Linux: `~/.local/share/irtui/log/irtui.log`
+If you ever need to see the logs, just set `IRTUI_LOG_LEVEL` to one of `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, which correspond to the `tracing-subscriber` log levels, listed from most to least verbose. Logs will be outputted in your system's default log directory:
+- Unix: `~/.local/share/irtui/log/irtui.log`
 - Windows: `~\Local\irtui\logs\irtui.log`
+
+Warning: the `TRACE` and `DEBUG` levels are very verbose and can quickly take up several GB of storage, beware.
 
 ## Features/Wishlist
 
@@ -73,6 +74,7 @@ If you ever need to see the logs, just set `IRTUI_LOG_LEVEL` to one of `TRACE`, 
 - [ ] Display the minimap
 - [ ] Display and play the radio
 - [ ] Add a link to the main site and to the discord
+- [ ] Maybe support [custom glyphs](https://rapha.land/introducing-glyph-protocol-for-terminals/), for the vote options icons
 
 ## License
 
