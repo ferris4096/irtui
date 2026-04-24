@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_aux::prelude::*;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tracing::{info, debug, error, instrument};
+use tracing::{Level, debug, error, info, instrument};
 
 /// Events emitted by the IRT backend
 #[derive(Clone, Debug)]
@@ -58,7 +58,7 @@ impl WSBackend {
     ///
     /// ## Errors
     /// This fails if we can't connect to the websocket for some reason
-    #[instrument(name = "roadtrip.connect")]
+    #[instrument(level = Level::DEBUG)]
     pub async fn new() -> Result<Self, anyhow::Error> {
         info!("Connecting to IRT websocket");
         let (socket, _response) =
@@ -72,7 +72,7 @@ impl WSBackend {
 }
 
 impl WSBackend {
-    #[instrument(skip(self), name = "roadtrip.next")]
+    #[instrument(skip(self), level = Level::DEBUG)]
     pub async fn next(&mut self) -> Option<anyhow::Result<WSEvent>> {
         let maybe_message = self.socket.next().await?;
         let result = || -> anyhow::Result<WSEvent> {

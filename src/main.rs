@@ -13,6 +13,7 @@ use std::{
 };
 
 use tracing::{Level, error, info};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 use crate::app::App;
 
@@ -44,16 +45,17 @@ async fn main() -> anyhow::Result<()> {
 
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(log_level)
-        .with_ansi(false)
+        .with_ansi(true)
         .with_writer(log_file)
         .with_target(true)
-        .compact()
+        .with_span_events(FmtSpan::CLOSE)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    info!("Initializing terminal");
+    info!("Initializing crossterm terminal, entering raw mode and alternate screen");
     let terminal = ratatui::init();
+
     info!("Launching app");
 
     let result = App::with_default_term()
@@ -63,7 +65,8 @@ async fn main() -> anyhow::Result<()> {
         .run(terminal)
         .await;
 
-    info!("Exiting gracefully");
+    info!("Exiting...");
+
     ratatui::restore();
     result
 }

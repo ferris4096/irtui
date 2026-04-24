@@ -7,7 +7,7 @@ use tokio::{
     sync::mpsc::{self, UnboundedSender},
     task,
 };
-use tracing::{debug, warn, info, instrument, error};
+use tracing::{Level, debug, error, info, instrument, warn};
 
 use crate::roadtrip::{self, RoadtripEvent};
 
@@ -56,7 +56,7 @@ impl Debug for AppEvent {
 }
 
 /// Spawn a task to forward crossterm and tick events
-#[instrument(skip_all, name = "event.crossterm_handler")]
+#[instrument(skip_all, level = Level::DEBUG)]
 fn handle_crossterm_and_tick_evts(
     sender: UnboundedSender<Event>,
     mut crossterm_stream: impl Stream<Item = Result<CrosstermEvent, std::io::Error>>
@@ -106,7 +106,7 @@ impl EventHandler {
     ///
     /// TODO: ideally remove this task to somewhere else, making this function more pure
     #[must_use]
-    #[instrument(skip_all, name = "event.handler_init")]
+    #[instrument(level = Level::DEBUG)]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded_channel(); // Random, may change
 
@@ -144,7 +144,9 @@ impl EventHandler {
                                         "Failed to receive from IRT WS"
                                     );
                                     if consecutive_errors > 5 {
-                                        error!("Too many consecutive errors, stopping roadtrip handler");
+                                        error!(
+                                            "Too many consecutive errors, stopping roadtrip handler"
+                                        );
                                         break;
                                     }
                                 }

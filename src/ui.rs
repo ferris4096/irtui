@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, BorderType, Clear, LineGauge, Padding, Paragraph, Widget, Wrap},
 };
 use ratatui_image::Image;
+use tracing::{Level, instrument};
 use unicode_width::UnicodeWidthStr;
 
 const WIDE_BREAK: u16 = 92;
@@ -82,7 +83,11 @@ impl App {
     /// Render the the town and street boxes, approximating the website layout
     fn render_location(&self, area: Rect, buf: &mut Buffer) {
         if let Some(location) = &self.location {
-            let content = format!("{}, {}", location.neighborhood.as_ref().unwrap_or(&location.county), location.country);
+            let content = format!(
+                "{}, {}",
+                location.neighborhood.as_ref().unwrap_or(&location.county),
+                location.country
+            );
 
             // Compute the properties of the town box
             let padding = if area.width >= WIDE_BREAK {
@@ -311,6 +316,7 @@ impl App {
 
 impl Widget for &App {
     /// Render the whole UI.
+    #[instrument(skip(self, buf), level = Level::TRACE)]
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.render_frame(area, buf);
         self.render_location(area, buf);
@@ -450,9 +456,10 @@ mod tests {
         let mut app = App::new(EventHandler::new_deterministic(), tx);
 
         app.location = Some(Location {
-            neighborhood:
-                Some("Town of East Hampton, East Historical Village District, Bla bla bla bla bla bla"
-                    .to_string()), // Wide text for testing
+            neighborhood: Some(
+                "Town of East Hampton, East Historical Village District, Bla bla bla bla bla bla"
+                    .to_string(),
+            ), // Wide text for testing
             country: "United States of America".to_string(),
             road: "Very very loooong street street street street name name".to_string(),
             county: "Suffolk County".to_string(), // Random

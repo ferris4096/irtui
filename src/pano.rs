@@ -8,7 +8,7 @@ use ratatui_image::{Resize, picker::Picker};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
-use tracing::{debug, info, instrument, warn, error};
+use tracing::{Level, debug, error, info, instrument, warn};
 
 use crate::{
     app::PanoRequest,
@@ -163,7 +163,7 @@ fn decode_panoid(panoid: &str) -> Pano {
 /// # Errors
 ///
 /// This fails if the network fails, or if we fail to parse the response json for some reason
-#[instrument(level = "debug")]
+#[instrument(level = Level::DEBUG)]
 pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMetadata> {
     let pano = decode_panoid(pano_id);
     let type_num = pano.pano_type as u8;
@@ -315,6 +315,7 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
     })
 }
 
+#[instrument(skip_all, level = Level::TRACE)]
 async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
     let query_url = match tile.pano.pano_type {
         PanoType::Official => {
@@ -360,6 +361,7 @@ async fn load_tile(tile: &Tile, client: &Client) -> anyhow::Result<RgbImage> {
 /// This fail if any of the tiles fail to load
 ///
 /// TODO: render blank squares instead of failing
+#[instrument(level = Level::DEBUG)]
 pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
     let zoom = meta.max_zoom.min(3);
     let mut buf = ImageBuffer::new(
@@ -416,6 +418,7 @@ pub async fn load_equirect(meta: &PanoMetadata) -> anyhow::Result<RgbImage> {
     Ok(buf)
 }
 
+#[instrument(level = Level::TRACE)]
 fn map_to_sphere(x: f32, y: f32, z: f32, yaw: f32, pitch: f32) -> (f32, f32) {
     let theta = f32::acos(z / (x * x + y * y + z * z).sqrt());
     let phi = f32::atan2(y, x);
@@ -434,6 +437,7 @@ fn map_to_sphere(x: f32, y: f32, z: f32, yaw: f32, pitch: f32) -> (f32, f32) {
     (theta_prime, phi_prime)
 }
 
+#[instrument(skip(pano), level = Level::TRACE)]
 fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
     let x = x.rem_euclid(pano.width() as f32 - 1.0);
     let y = y.clamp(0., (pano.height() - 1) as f32);
@@ -445,6 +449,7 @@ fn interpolate_color(x: f32, y: f32, pano: &RgbImage) -> Rgb<u8> {
 ///
 /// Thanks to <https://blogs.codingballad.com/unwrapping-the-view-transforming-360-panoramas-into-intuitive-videos-with-python-6009bd5bca94>
 /// for this code
+#[instrument(skip(pano), level = Level::TRACE)]
 fn pano_to_plane(
     pano: &RgbImage,
     fov: f32,
@@ -497,6 +502,7 @@ fn pano_to_plane(
 /// # Errors
 /// This can fail if we fail to fetch any of the tiles
 /// TODO: Render a blank space instead of failing
+#[instrument(skip(pano), level = Level::DEBUG)]
 pub fn render_pano_from_metadata(
     meta: &PanoMetadata,
     pano: &RgbImage,
@@ -526,12 +532,7 @@ pub fn render_pano_from_metadata(
 
     debug!(
         load_ms,
-        render_ms,
-        total_ms,
-        out_w,
-        out_h,
-        heading,
-        "Rendered panorama"
+        render_ms, total_ms, out_w, out_h, heading, "Rendered panorama"
     );
 
     Ok(rendered)
@@ -541,14 +542,18 @@ pub fn render_pano_from_metadata(
 ///
 /// # Errors
 /// This fails if we fail to spawn the task e.g. we fail to query the terminal size
-#[instrument(skip_all, name = "pano.renderer")]
+#[instrument(skip_all, level = Level::DEBUG)]
 pub fn spawn_rendering_task(
     mut pano_rx: tokio::sync::mpsc::Receiver<PanoRequest>,
     evt_sender: tokio::sync::mpsc::UnboundedSender<Event>,
 ) -> anyhow::Result<()> {
     let picker = Picker::halfblocks(); // TODO: Support real image protocols but for now support for text on top of images is too flaky
     let mut cur_size = crossterm::terminal::size()?;
-    info!(width = cur_size.0, height = cur_size.1, "Panorama renderer initialized");
+    info!(
+        width = cur_size.0,
+        height = cur_size.1,
+        "Panorama renderer initialized"
+    );
 
     tokio::task::spawn(async move {
         let font_size = picker.font_size();

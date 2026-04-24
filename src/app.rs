@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, prelude::*};
 use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, info, instrument, warn};
+use tracing::{Level, debug, info, instrument, warn};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PanoRequest {
@@ -59,23 +59,25 @@ impl App {
     ///
     /// # Errors
     /// This fails if setting up one of the tasks fails
-    #[instrument(skip_all, name = "app.init")]
+    #[instrument(name = "App::init")]
     pub fn with_default_term() -> anyhow::Result<Self> {
         // Spawn the default pano rendering task
+        debug!("Creating crossterm EventHandler");
         let evt_handler = EventHandler::new();
         let (pano_tx, pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10); // Idk why ten but why not?
 
         let evt_sender = evt_handler.sender.clone(); // So that rendering task can report back
 
-        info!("Spawning pano rendering task");
+        debug!("Spawning pano rendering task");
         spawn_rendering_task(pano_rx, evt_sender)?;
 
-        info!("App initialized successfully");
+        debug!("App initialized successfully");
         Ok(App::new(evt_handler, pano_tx))
     }
 
     /// Constructs a new instance of [`App`], given and event source and a pano sender
     #[must_use]
+    #[instrument(skip_all, level = Level::DEBUG)]
     pub fn new(evt_handler: EventHandler, pano_tx: Sender<PanoRequest>) -> Self {
         Self {
             running: true,
@@ -95,7 +97,7 @@ impl App {
     ///
     /// # Errors
     /// This fails if drawing to the terminal failed or if handling events failed
-    #[instrument(skip_all, name = "app.run")]
+    #[instrument(skip_all, name = "App::run")]
     pub async fn run<B: Backend + Send + 'static>(
         mut self,
         mut terminal: Terminal<B>,
@@ -119,7 +121,7 @@ impl App {
     pub async fn handle_events(&mut self) -> anyhow::Result<()> {
         let mut requested_size = None;
         while let Some(event) = self.events.next().await {
-            info!("Handling event: {event:?}");
+            debug!("Handling event: {event:?}");
 
             match event {
                 Event::Crossterm(event) => match event {
@@ -160,14 +162,14 @@ impl App {
     /// # Errors
     /// Fails if the queue fails, which might turn out to be impossible, but we still return a `Result` just
     /// to be safe.
-    #[instrument(skip_all, name = "app.roadtrip_event")]
+    #[instrument(skip(self), level = Level::DEBUG)]
     pub async fn handle_roadtrip_event(
         &mut self,
         roadtrip_event: RoadtripEvent,
     ) -> anyhow::Result<()> {
         match roadtrip_event {
             RoadtripEvent::WS(evt) => {
-                info!(
+                debug!(
                     users_online = evt.total_users,
                     location = ?evt.location,
                     "Received roadtrip update"
@@ -201,7 +203,7 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    #[instrument(skip_all, name = "app.key_event")]
+    #[instrument(skip(self), level = Level::DEBUG)]
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => {
