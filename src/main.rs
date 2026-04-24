@@ -30,9 +30,10 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|level| Level::from_str(&level).ok());
 
-    let log_path = cfg_select! {
-        windows => r"Local\irtui\logs\irtui.log", // Use raw string for windows path
-        _ => ".local/share/irtui/log/irtui.log"
+    let log_path = if cfg!(windows) {
+         r"Local\irtui\logs\irtui.log" // Use raw string for windows path
+    } else { 
+        ".local/share/irtui/log/irtui.log"
     };
 
     let log_path = env::home_dir().unwrap().join(log_path);
