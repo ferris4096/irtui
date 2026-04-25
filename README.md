@@ -2,79 +2,61 @@
 
 A terminal user interface for the [Neal.fun Internet Roadtrip](https://neal.fun/internet-roadtrip)
 
-## Features
+## About the roadtrip
 
-## Demo
+If you're new to IRT, please check out the [(un)official guide](https://bit.ly/unofficial-guide)
 
-![IRTUI Demo](/assets/demo/demo.gif)
+## Screenshots
 
-Actual results may vary, based on truecolor and emoji support of your terminal emulator. I used the VsCode default terminal on macOS Tahoe.
+<img width="559" height="482" alt="Capture d’écran 2026-04-25 à 18 19 50" src="https://github.com/user-attachments/assets/d2baa649-bd2f-4c2c-a4f7-40452623b3f3" />
+<img width="1000" height="686" alt="Capture d’écran 2026-04-25 à 18 18 28" src="https://github.com/user-attachments/assets/5fdc8405-aae0-4593-9a6a-4f479401cc8e" />
+<img width="1000" height="686" alt="Capture d’écran 2026-04-25 à 18 18 23" src="https://github.com/user-attachments/assets/8c6bf809-cf7d-4239-9140-e61f7017501c" />
 
-Sorry for the interstate 😭, I hate interstates too, btw, AIM for life!!
+Ok, let's be honest, these screenshots are optimistic. I ran them on macos, inside the vscode terminal, but terminal support and fonts vary wildly, so the image may display differently and and be kinda glitchy. Sadly, I haven't found a way to get chafa working on windows, so for now windows users will just see the image rendered with halfblocks.
 
-## Getting Started
+## Features/TODO
 
-### Prebuilt binaries
-Prebuilt binaries are available in the [releases section](https://github.com/lazo4/irtui/releases/latest)
-
-For now, no binaries are available, but I will try to make as many as possible
-
-### Build from source
-
-#### Prerequisites
-
-- [Install Rust](https://rustup.rs)
-
-##### MacOS and Linux
-- Install [chafa](https://hpjansson.org/chafa/download/)
-
-##### Windows
-
-Chafa is currently unsupported on Windows due to pkg-config issues. If you know how to make it work, please
-submit a PR.
-
-#### Building
-
-Now clone the repo:
-```bash
-git clone https://github.com/lazo4/irtui && cd irtui
-```
-
-Now you can just run: 
-```bash
-cargo build --release
-```
-
-Or, if you want to install it locally: 
-```bash
-cargo install --path .
-```
-
-## Usage
-
-Just run it:
-```bash
-irtui
-```
-
-### Logging
-
-If you ever need to see the logs, just set `IRTUI_LOG_LEVEL` to one of `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, which correspond to the `tracing-subscriber` log levels, listed from most to least verbose. Logs will be outputted in your system's default log directory:
-- Unix: `~/.local/share/irtui/log/irtui.log`
-- Windows: `~\Local\irtui\logs\irtui.log`
-
-Warning: the `TRACE` and `DEBUG` levels are very verbose and can quickly take up several GB of storage, beware.
-
-## Features/Wishlist
-
+- [x] Bare bones: pano rendering and vote counts
 - [ ] Support honking
-- [ ] Add chat box 
+- [ ] Support HiveChat
 - [ ] Support voting
 - [ ] Display the odometer
 - [ ] Display the minimap
 - [ ] Display and play the radio
 - [ ] Add a link to the main site and to the discord
 - [ ] Maybe support [custom glyphs](https://rapha.land/introducing-glyph-protocol-for-terminals/), for the vote options icons
+
+## Quickstart
+
+On macOS, you'll have to install chafa first:
+```zsh
+brew install chafa
+```
+You can download prebuild binaries for macos, linux and windows in the [releases section](https://github.com/lazo4/irtui/releases). Once you downloaded the right one, just put it in the install directory of your choice! (and maybe rename it to just `irtui`)
+
+Now just run it with:
+```bash
+irtui
+```
+
+## Build from source
+
+If your platform isn't available, or if you'd like to run the HEAD version, you can build from source.
+
+### Prerequisites
+You'll need:
+- [Rust](rustup.rs)
+- Chafa:
+  Macos: `brew install chafa`
+  Linux: `sudo apt install libchafa-dev libglib2.0-dev`
+- Pkg-Config: only for linux
+
+### Compiling
+Just run:
+```
+cargo build --release
+```
+The binary is now in `target/release/irtui`
 
 ## License
 
