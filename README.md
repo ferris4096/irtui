@@ -58,6 +58,10 @@ cargo build --release
 ```
 The binary is now in `target/release/irtui`
 
+## Contributing
+
+Any contributions are welcome, if you have a bug, feature request, or would like to submit more binaries, feel free to open an issue or PR.
+
 ## License
 
 This project is licensed under the MIT license ([LICENSE] or <http://opensource.org/licenses/MIT>)
