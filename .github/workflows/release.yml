@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  release:
+    types: [created]
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  build:
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: ['ubuntu-latest', 'macos-latest', 'macos-26-intel', 'windows-latest']
+
+    steps:
+    - uses: actions/checkout@v6
+    - if: startsWith(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libchafa-dev pkg-config libglib2.0-dev
+    - if: startsWith(matrix.os, 'macos')
+      run: | 
+        brew install chafa
+      
+    - name: Build
+      run: cargo build --release --verbose
+
+    - if: matrix.os == 'ubuntu-latest'
+      run: mv target/release/irtui target/release/irtui-x86_64-linux
+
+    - if: matrix.os == 'macos-latest'
+      run: mv target/release/irtui target/release/irtui-aarch64-macos
+
+    - if: matrix.os == 'macos-26-intel'
+      run: mv target/release/irtui target/release/irtui-x86_64-macos
+
+    - if: matrix.os == 'windows-latest'
+      run: mv target/release/irtui.exe target/release/irtui-x86_64-windows.exe
+
+    - name: Upload release artifact
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: irtui-${{ matrix.os }}
+        path: target/release/irtui-*
+      
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+    - name: Download all artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: ./bins
+        
+    - name: Publish built binary to GitHub releases
+      run: |
+        gh release upload ${{ github.ref_name }} ./bins/**/*
