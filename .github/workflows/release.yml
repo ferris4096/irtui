@@ -22,14 +22,15 @@ jobs:
     - if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get update
-        sudo apt-get install -y libchafa-dev pkg-config libglib2.0-dev
+        sudo apt-get install -y libchafa-dev pkg-config libglib2.0-dev libsysprof-capture-4-dev
+        cargo build --release --features chafa-static
     - if: startsWith(matrix.os, 'macos')
       run: | 
         brew install chafa
+        cargo build --release --features chafa-dyn
+    - if: startsWith(matrix.os, 'windows')
+      run: cargo build --release
       
-    - name: Build
-      run: cargo build --release --verbose
-
     - if: matrix.os == 'ubuntu-latest'
       run: mv target/release/irtui target/release/irtui-x86_64-linux
 
