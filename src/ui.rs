@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Offset, Rect, Size},
     style::{Color, Style, Stylize},
     symbols,
-    text::Line,
+    text::{Line, Text},
     widgets::{Block, BorderType, Clear, LineGauge, Padding, Paragraph, Widget, Wrap},
 };
 use ratatui_image::Image;
@@ -15,7 +15,7 @@ use unicode_width::UnicodeWidthStr;
 
 const WIDE_BREAK: u16 = 92;
 
-use crate::app::App;
+use crate::app::{App, Hivechat};
 
 /// Compute the minimum width of a piece of text (kinda like css min-width I think)
 fn compute_min_width(content: &str, wrap: bool) -> u16 {
@@ -319,9 +319,46 @@ impl Widget for &App {
     #[instrument(skip(self, buf), level = Level::TRACE)]
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.render_frame(area, buf);
+        self.hivechat.render(area, buf);
         self.render_location(area, buf);
         self.render_drivers_online(area, buf);
         self.render_vote_counts(area, buf);
+    }
+}
+
+impl Widget for &Hivechat {
+    fn render(self, area: Rect, buf: &mut Buffer)
+    where
+        Self: Sized,
+    {
+        if !self.hidden {
+            let width = 20;
+            let height = 10;
+            let content_rect = Rect::new(area.width.saturating_sub(width), 0, width, area.height)
+                .centered_vertically(Constraint::Length(height))
+                .clamp(area);
+
+            let text: Text = self
+                .messages
+                .iter()
+                .map(|msg| {
+                    Line::from(vec![
+                        msg.author.as_str().fg(msg.color).bold(),
+                        " ".into(),
+                        msg.content.as_str().black(),
+                    ])
+                })
+                .collect();
+            let messages = Paragraph::new(text)
+                .bg(Color::White)
+                .wrap(Wrap { trim: false });
+            let y_offset = (messages.line_count(content_rect.width) as u16)
+                .saturating_sub(content_rect.height);
+            let messages = messages.scroll((y_offset, 0));
+
+            Clear.render(content_rect, buf);
+            messages.render(content_rect, buf);
+        }
     }
 }
 
@@ -355,7 +392,7 @@ mod tests {
     #[test]
     fn test_full_render() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
-        let app = App::new(EventHandler::new_deterministic(), tx);
+        let app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
 
         let area = Rect::new(0, 0, 100, 50);
         let mut buf = Buffer::empty(area);
@@ -380,7 +417,7 @@ mod tests {
     #[test]
     fn test_render_drivers_online() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
-        let mut app = App::new(EventHandler::new_deterministic(), tx);
+        let mut app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
         app.users_online = 100;
 
         let area = Rect::new(0, 0, 30, 5);
@@ -418,7 +455,7 @@ mod tests {
     #[test]
     fn test_render_location_narrow() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
-        let mut app = App::new(EventHandler::new_deterministic(), tx);
+        let mut app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
 
         app.location = Some(Location {
             neighborhood: Some("Town of East Hampton".to_string()), // Wide text for testing
@@ -453,7 +490,7 @@ mod tests {
     #[test]
     fn test_render_location_wide() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
-        let mut app = App::new(EventHandler::new_deterministic(), tx);
+        let mut app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
 
         app.location = Some(Location {
             neighborhood: Some(
@@ -492,7 +529,7 @@ mod tests {
     #[test]
     fn test_vote_counts() {
         let (tx, _) = tokio::sync::mpsc::channel(100);
-        let mut app = App::new(EventHandler::new_deterministic(), tx);
+        let mut app = App::new(EventHandler::new_deterministic(), tx, Vec::new());
 
         app.vote_ends = Some(Utc::now().timestamp_millis() as u64 + 7000);
         app.current_pano = Some((String::new(), 90.0));

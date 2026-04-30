@@ -2,11 +2,19 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use futures::StreamExt;
+use ratatui::style::Color;
 use serde::Deserialize;
 use serde_aux::prelude::*;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{Level, debug, error, info, instrument};
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ChatEvent {
+    pub author: String,
+    pub content: String,
+    pub color: Color,
+}
 
 /// Events emitted by the IRT backend
 #[derive(Clone, Debug)]
@@ -36,6 +44,7 @@ pub struct WSEvent {
     pub options: Vec<VoteOption>,
     // #[serde(deserialize_with = "deserialize_datetime_utc_from_milliseconds")]
     pub end_time: u64,
+    pub chat_events: Vec<ChatEvent>,
 }
 
 /// Our current location, as per the websocket
@@ -108,7 +117,7 @@ impl WSBackend {
 
 #[test]
 fn test_ws_event_deserialization() {
-    let json = r#"
+    let json = r##"
     {
         "pano": "abc123",
         "heading": 42.5,
@@ -124,9 +133,19 @@ fn test_ws_event_deserialization() {
         "options": [
             { "heading": 10.0, "pano": "p1" }
         ],
-        "endTime": 1000
+        "endTime": 1000,
+        "chatEvents": [
+            {
+                "type": "add",
+                "id": "1499452156699213889",
+                "author": "RibuRcul [head navigator]",
+                "content": "The blue blobs are cities",
+                "timestamp": 1777567652631,
+                "color": "#88ff8a"
+            }
+        ]
     }
-    "#;
+    "##;
 
     let event: WSEvent = serde_json::from_str(json).unwrap();
 

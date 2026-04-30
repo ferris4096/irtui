@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     event::{AppEvent, Event, EventHandler},
     pano::spawn_rendering_task,
-    roadtrip::{Location, RoadtripEvent, VoteOption},
+    roadtrip::{ChatEvent, Location, RoadtripEvent, VoteOption},
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -11,6 +11,8 @@ use ratatui::{Terminal, prelude::*};
 use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
 use tracing::{Level, debug, info, instrument, warn};
+use wreq::{Client, header::HeaderMap};
+use wreq_util::Emulation;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PanoRequest {
@@ -19,6 +21,14 @@ pub enum PanoRequest {
 
     // New pano arrived, fetch tiles and render
     Render(String, f64), // panoid + heading
+}
+
+pub struct Hivechat {
+    /// Wether the sidebar is hidden
+    pub hidden: bool,
+
+    /// The current messages the chat is displaying
+    pub messages: Vec<ChatEvent>,
 }
 
 /// Application
@@ -52,6 +62,9 @@ pub struct App {
 
     /// When the voting period ends
     pub vote_ends: Option<u64>,
+
+    /// The current state of the Hivechat
+    pub hivechat: Hivechat,
 }
 
 impl App {
@@ -60,7 +73,7 @@ impl App {
     /// # Errors
     /// This fails if setting up one of the tasks fails
     #[instrument(name = "App::init")]
-    pub fn with_default_term() -> anyhow::Result<Self> {
+    pub async fn with_default_term() -> anyhow::Result<Self> {
         // Spawn the default pano rendering task
         debug!("Creating crossterm EventHandler");
         let evt_handler = EventHandler::new();
@@ -71,14 +84,44 @@ impl App {
         debug!("Spawning pano rendering task");
         spawn_rendering_task(pano_rx, evt_sender)?;
 
+        debug!("Fetching chat messages");
+
+        let response = Client::builder()
+            .emulation(Emulation::Firefox139)
+            .build()?
+            .get("https://internet-roadtrip.neal.fun/chat")
+            .header("Host", "internet-roadtrip.neal.fun")
+            .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:146.0) Gecko/20100101 Firefox/139.0")
+            .header("Accept", "*/*")
+            .header("Accept-Language", "r,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3")
+            .header("Prefer", "safe")
+            .header("Accept-Encoding", "gzip, deflate, br, zstd")
+            .header("Referer", "https://neal.fun/")
+            .header("Origin", "https://neal.fun")
+            .header("Sec-GPC", "1")
+            .header("Connection", "keep-alive")
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Site", "same-site")
+            .header("Priority", "u=4")
+            .header("TE", "trailers")
+            .send()
+            .await?
+            .json()
+            .await?;
+
         debug!("App initialized successfully");
-        Ok(App::new(evt_handler, pano_tx))
+        Ok(App::new(evt_handler, pano_tx, response))
     }
 
-    /// Constructs a new instance of [`App`], given and event source and a pano sender
+    /// Constructs a new instance of [`App`], given an event source, pano sender and initial chat messages
     #[must_use]
     #[instrument(skip_all, level = Level::DEBUG)]
-    pub fn new(evt_handler: EventHandler, pano_tx: Sender<PanoRequest>) -> Self {
+    pub fn new(
+        evt_handler: EventHandler,
+        pano_tx: Sender<PanoRequest>,
+        messages: Vec<ChatEvent>,
+    ) -> Self {
         Self {
             running: true,
             current_pano: None,
@@ -90,6 +133,10 @@ impl App {
             vote_options: Vec::new(),
             vote_counts: HashMap::new(),
             vote_ends: None,
+            hivechat: Hivechat {
+                hidden: false,
+                messages,
+            },
         }
     }
 
@@ -182,6 +229,8 @@ impl App {
                 self.vote_options = evt.options;
                 self.vote_ends = Some(evt.end_time);
 
+                self.hivechat.messages.extend(evt.chat_events);
+
                 if self.current_pano != Some((evt.pano.clone(), evt.heading)) {
                     // Update current pano and trigger a render request.
                     info!(
@@ -238,13 +287,13 @@ mod tests {
         let evt_handler = EventHandler::new_deterministic();
         let (pano_tx, pano_rx) = tokio::sync::mpsc::channel::<PanoRequest>(10);
         let sender = evt_handler.sender.clone();
-        (App::new(evt_handler, pano_tx), sender, pano_rx)
+        (App::new(evt_handler, pano_tx, Vec::new()), sender, pano_rx)
     }
 
     #[tokio::test]
     #[ignore = "uses crossterm backend"]
     async fn test_app_default() {
-        let app = App::with_default_term().unwrap();
+        let app = App::with_default_term().await.unwrap();
         assert!(app.running);
         assert!(app.current_pano.is_none());
         assert!(app.location.is_none());
@@ -322,6 +371,7 @@ mod tests {
             ],
             vote_counts: HashMap::from([(-1, 3), (-2, 2), (0, 8), (1, 3)]),
             end_time,
+            chat_events: Vec::new(),
         }));
         sender.send(event).unwrap();
         sender.send(Event::Tick).unwrap(); // Break the loop

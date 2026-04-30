@@ -31,8 +31,8 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|level| Level::from_str(&level).ok());
 
     let log_path = if cfg!(windows) {
-         r"Local\irtui\logs\irtui.log" // Use raw string for windows path
-    } else { 
+        r"Local\irtui\logs\irtui.log" // Use raw string for windows path
+    } else {
         ".local/share/irtui/log/irtui.log"
     };
 
@@ -60,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Launching app");
 
     let result = App::with_default_term()
+        .await
         .inspect_err(|err| {
             error!(error = ?err, "Failed to initialize app");
         })?
