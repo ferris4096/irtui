@@ -50,6 +50,7 @@ You'll need:
   Macos: `brew install chafa`
   Linux: `sudo apt install libchafa-dev libglib2.0-dev`
 - Pkg-Config: only for linux
+- [CMake](https://cmake.org/download/)
 
 ### Features
 You'll have to choose a way of linking chafa, based on your platform:
