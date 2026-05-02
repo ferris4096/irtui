@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::Context;
 use futures::StreamExt;
 use ratatui::style::Color;
 use serde::Deserialize;
 use serde_aux::prelude::*;
-use tokio::net::TcpStream;
 use tracing::{Level, debug, error, info, instrument};
 use wreq::{Client, WebSocket};
 

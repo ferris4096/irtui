@@ -11,7 +11,7 @@ use ratatui::{Terminal, prelude::*};
 use ratatui_image::protocol::Protocol;
 use tokio::sync::mpsc::Sender;
 use tracing::{Level, debug, info, instrument, warn};
-use wreq::{Client, header::HeaderMap};
+use wreq::Client;
 use wreq_util::Emulation;
 
 #[derive(Debug, Clone, PartialEq)]
