@@ -6,8 +6,8 @@ use ratatui::style::Color;
 use serde::Deserialize;
 use serde_aux::prelude::*;
 use tokio::net::TcpStream;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{Level, debug, error, info, instrument};
+use wreq::{Client, WebSocket};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ChatEvent {
@@ -59,7 +59,7 @@ pub struct Location {
 
 /// Websocket client that connects to the IRT websocket
 pub struct WSBackend {
-    socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    socket: WebSocket,
 }
 
 impl WSBackend {
@@ -70,10 +70,12 @@ impl WSBackend {
     #[instrument(level = Level::DEBUG)]
     pub async fn new() -> Result<Self, anyhow::Error> {
         info!("Connecting to IRT websocket");
-        let (socket, _response) =
-            connect_async("wss://internet-roadtrip-listen-eqzms.ondigitalocean.app/")
-                .await
-                .context("Failed to connect to websocket")?;
+        let socket = Client::new()
+            .websocket("wss://internet-roadtrip-listen-eqzms.ondigitalocean.app/")
+            .send()
+            .await?
+            .into_websocket()
+            .await?;
 
         info!("Connected to IRT websocket successfully");
         Ok(Self { socket })

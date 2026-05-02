@@ -5,10 +5,10 @@ use base64::{Engine as _, engine::general_purpose};
 use image::{GenericImage, ImageBuffer, ImageReader, Rgb, RgbImage, imageops};
 use ratatui::layout::Rect;
 use ratatui_image::{Resize, picker::Picker};
-use reqwest::Client;
 use serde_json::Value;
 use tokio::task;
 use tracing::{Level, debug, error, info, instrument, warn};
+use wreq::Client;
 
 use crate::{
     app::PanoRequest,
@@ -174,7 +174,7 @@ pub async fn get_pano_metadata_from_id(pano_id: &str) -> anyhow::Result<PanoMeta
         id = pano.id
     );
 
-    let client = reqwest::Client::new();
+    let client = Client::new();
     let res = client
         .post("https://maps.googleapis.com/$rpc/google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata")
         .header("Content-Type", "application/json+protobuf")
