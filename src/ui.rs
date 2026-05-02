@@ -331,13 +331,12 @@ impl Widget for &Hivechat {
     where
         Self: Sized,
     {
+        let width = 20;
+        let height = 10;
+        let content_rect = Rect::new(area.width.saturating_sub(width), 0, width, area.height)
+            .centered_vertically(Constraint::Length(height))
+            .clamp(area);
         if !self.hidden {
-            let width = 20;
-            let height = 10;
-            let content_rect = Rect::new(area.width.saturating_sub(width), 0, width, area.height)
-                .centered_vertically(Constraint::Length(height))
-                .clamp(area);
-
             let text: Text = self
                 .messages
                 .iter()
@@ -359,6 +358,16 @@ impl Widget for &Hivechat {
             Clear.render(content_rect, buf);
             messages.render(content_rect, buf);
         }
+        buf.set_string(
+            if self.hidden {
+                area.width - 2
+            } else {
+                content_rect.x - 2
+            },
+            content_rect.y,
+            "💬",
+            Style::default().bg(Color::White),
+        );
     }
 }
 
