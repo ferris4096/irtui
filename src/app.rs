@@ -263,7 +263,10 @@ impl App {
                 info!("Quit requested via Ctrl+C");
                 self.events.send(AppEvent::Quit);
             }
-            // Other handlers you could add here.
+            KeyCode::Char('c') => {
+                debug!("Toggling HiveChat display");
+                self.hivechat.hidden = !self.hivechat.hidden
+            }
             _ => debug!(code = ?key_event.code, "Unhandled key event"),
         }
     }
