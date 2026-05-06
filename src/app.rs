@@ -356,7 +356,7 @@ mod tests {
                 road: "Tremont St".to_string(),
                 neighborhood: Some("Boston".to_string()),
                 state: "Massachusetts".to_string(),
-                county: "Suffolk".to_string(),
+                county: Some("Suffolk".to_string()),
                 country: "United States of America".to_string(),
             },
             total_users: 220,

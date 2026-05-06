@@ -51,7 +51,7 @@ pub struct Location {
     pub road: String,
     pub neighborhood: Option<String>,
     pub state: String,
-    pub county: String,
+    pub county: Option<String>,
     pub country: String,
 }
 

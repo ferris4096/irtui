@@ -85,7 +85,7 @@ impl App {
         if let Some(location) = &self.location {
             let content = format!(
                 "{}, {}",
-                location.neighborhood.as_ref().unwrap_or(&location.county),
+                location.neighborhood.as_ref().or(location.county.as_ref()).unwrap_or(&"".into()),
                 location.country
             );
 
@@ -470,7 +470,7 @@ mod tests {
             neighborhood: Some("Town of East Hampton".to_string()), // Wide text for testing
             country: "United States of America".to_string(),
             road: "Main Street".to_string(),
-            county: "Suffolk County".to_string(), // Random
+            county: Some("Suffolk County".to_string()), // Random
             state: "New York".to_string(),        // Random
         });
 
@@ -508,7 +508,7 @@ mod tests {
             ), // Wide text for testing
             country: "United States of America".to_string(),
             road: "Very very loooong street street street street name name".to_string(),
-            county: "Suffolk County".to_string(), // Random
+            county: Some("Suffolk County".to_string()), // Random
             state: "New York".to_string(),        // Random
         });
 
