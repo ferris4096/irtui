@@ -32,7 +32,7 @@ chrono = "0.4.45"
 unicode-width = "0.2.2"
 wreq = { version = "5.3.0", features = ["json", "websocket"] }
 wreq-util = "2.2.6"
-wgpu = { version = "29.0.3", default-features = false, features = [
+wgpu = { version = "30.0.0", default-features = false, features = [
 	"std",
 	"wgsl",
 	"wgpu-core",
